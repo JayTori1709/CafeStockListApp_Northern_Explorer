@@ -8,17 +8,22 @@ import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -30,101 +35,139 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
-data class StockItem(
+/* -------------------- DATA MODELS -------------------- */
+
+data class StockRow(
     val id: String = UUID.randomUUID().toString(),
-    var name: String,
-    var parLevel: String = "",
-    var closingStock: String = "0",
-    var loadingAtAkl: String = "0",
-    var total: String = "0"
+    var product: String,
+    var closingPrev: String = "",
+    var loading: String = "",
+    var total: String = "",
+    var sales: String = "",
+    var prePurchase: String = "",
+    var waste: String = "",
+    var endDay: String = ""
 )
 
 data class CategorySection(
-    val name: String,
-    val items: MutableList<StockItem>
+    var name: String,
+    val rows: MutableList<StockRow>
 )
 
+/* -------------------- MAIN ACTIVITY -------------------- */
+
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            CafeStockListAppTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+            var isDarkMode by remember { mutableStateOf(false) }
+
+            CafeStockListAppTheme(darkTheme = isDarkMode) {
+                Surface(color = MaterialTheme.colorScheme.background) {
                     MainScreen(
-                        onExportPdf = { page, categories -> exportToPdf(page, categories) }
-                    )
+                        isDarkMode = isDarkMode,
+                        onToggleDarkMode = { isDarkMode = !isDarkMode }
+                    ) { pageName, categories, osm, tm, crew, date ->
+                        exportToPdf(pageName, categories, osm, tm, crew, date)
+                    }
                 }
             }
         }
     }
 
-    private fun exportToPdf(pageName: String, categories: List<CategorySection>) {
-        val pdfDocument = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
-        val page = pdfDocument.startPage(pageInfo)
+    /* -------------------- PDF EXPORT -------------------- */
+
+    private fun exportToPdf(
+        pageName: String,
+        categories: List<CategorySection>,
+        osm: String,
+        tm: String,
+        crew: String,
+        date: String
+    ) {
+
+        val pdf = PdfDocument()
+        val pageInfo = PdfDocument.PageInfo.Builder(1200, 1800, 1).create()
+        val page = pdf.startPage(pageInfo)
         val canvas = page.canvas
         val paint = Paint()
 
         // Title
-        paint.textSize = 18f
+        paint.textSize = 28f
         paint.isFakeBoldText = true
-        canvas.drawText("$pageName - NStock List Report", 50f, 40f, paint)
+        canvas.drawText("WLG - AKL (200) CLOSING STOCK", 40f, 50f, paint)
 
-        // Date
-        paint.textSize = 10f
+        // Header info
+        paint.textSize = 14f
         paint.isFakeBoldText = false
-        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-        canvas.drawText("Generated: ${dateFormat.format(Date())}", 50f, 60f, paint)
+        canvas.drawText("OSM: $osm / TM: $tm / CREW: $crew / DATE: $date", 40f, 80f, paint)
+        canvas.drawText("PREVIOUS DAY 201", 40f, 100f, paint)
 
-        var yPos = 90f
+        var y = 140f
 
         categories.forEach { category ->
-            // Category header
-            if (yPos > 750f) return@forEach // Prevent overflow
-
-            paint.textSize = 12f
+            paint.textSize = 16f
             paint.isFakeBoldText = true
-            canvas.drawText(category.name, 50f, yPos, paint)
-            yPos += 20f
+            paint.color = android.graphics.Color.BLACK
+            canvas.drawRect(40f, y - 15f, 1160f, y + 5f, paint.apply {
+                style = Paint.Style.FILL
+                color = android.graphics.Color.LTGRAY
+            })
+            paint.style = Paint.Style.FILL
+            paint.color = android.graphics.Color.BLACK
+            canvas.drawText(category.name, 50f, y, paint)
+            y += 25f
 
-            paint.textSize = 9f
+            // Column headers
+            paint.textSize = 10f
             paint.isFakeBoldText = false
+            canvas.drawText("Product", 50f, y, paint)
+            canvas.drawText("Closing", 280f, y, paint)
+            canvas.drawText("Loading", 350f, y, paint)
+            canvas.drawText("Total", 420f, y, paint)
+            canvas.drawText("Sales", 480f, y, paint)
+            canvas.drawText("Pre-Pur", 540f, y, paint)
+            canvas.drawText("Waste", 610f, y, paint)
+            canvas.drawText("End Day", 670f, y, paint)
 
-            category.items.forEach { item ->
-                if (yPos > 800f) return@forEach
+            y += 18f
 
-                canvas.drawText(item.name, 60f, yPos, paint)
-                canvas.drawText(item.parLevel, 250f, yPos, paint)
-                canvas.drawText(item.closingStock, 320f, yPos, paint)
-                canvas.drawText(item.loadingAtAkl, 390f, yPos, paint)
-                canvas.drawText(item.total, 460f, yPos, paint)
-                yPos += 18f
+            category.rows.forEach { row ->
+                if (y > 1700f) return@forEach
+
+                canvas.drawText(row.product, 50f, y, paint)
+                canvas.drawText(row.closingPrev, 290f, y, paint)
+                canvas.drawText(row.loading, 360f, y, paint)
+                canvas.drawText(row.total, 430f, y, paint)
+                canvas.drawText(row.sales, 490f, y, paint)
+                canvas.drawText(row.prePurchase, 550f, y, paint)
+                canvas.drawText(row.waste, 620f, y, paint)
+                canvas.drawText(row.endDay, 680f, y, paint)
+
+                y += 16f
             }
-            yPos += 10f
+            y += 15f
         }
 
-        pdfDocument.finishPage(page)
+        pdf.finishPage(page)
 
-        // Save PDF
-        val dateString = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val fileName = "${pageName}_StockList_$dateString.pdf"
+        val fileName = "${pageName}_${
+            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        }.pdf"
         val file = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName)
 
-        try {
-            pdfDocument.writeTo(FileOutputStream(file))
-            pdfDocument.close()
-            sendEmailWithPdf(file, pageName)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        pdf.writeTo(FileOutputStream(file))
+        pdf.close()
+
+        sendEmail(file, pageName)
     }
 
-    private fun sendEmailWithPdf(file: File, pageName: String) {
-        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-        val subject = "$pageName Stock List Report - ${dateFormat.format(Date())}"
+    private fun sendEmail(file: File, pageName: String) {
+
+        val subject = "$pageName Stock Sheet - ${
+            SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+        }"
 
         val uri = FileProvider.getUriForFile(
             this,
@@ -132,491 +175,437 @@ class MainActivity : ComponentActivity() {
             file
         )
 
-        val emailIntent = Intent(Intent.ACTION_SEND).apply {
+        val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
             putExtra(Intent.EXTRA_SUBJECT, subject)
-            putExtra(Intent.EXTRA_TEXT, "Please find attached the $pageName stock list report.")
+            putExtra(Intent.EXTRA_TEXT, "Attached stock sheet for $pageName.")
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
-        startActivity(Intent.createChooser(emailIntent, "Send stock report via..."))
+        startActivity(Intent.createChooser(intent, "Send Stock Sheet via"))
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MainScreen(onExportPdf: (String, List<CategorySection>) -> Unit) {
-    var selectedPage by remember { mutableStateOf(0) }
-    val pages = listOf("Cafe Stock", "AKL - WLG (201)")
-
-    Scaffold(
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = { Text("Cafe Stock List") },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                )
-                TabRow(selectedTabIndex = selectedPage) {
-                    pages.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedPage == index,
-                            onClick = { selectedPage = index },
-                            text = { Text(title) }
-                        )
-                    }
-                }
-            }
-        }
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
-            when (selectedPage) {
-                0 -> CafeStockPage(onExportPdf = { categories ->
-                    onExportPdf("Cafe Stock", categories)
-                })
-                1 -> AklWlgPage(onExportPdf = { categories ->
-                    onExportPdf("AKL-WLG", categories)
-                })
-            }
-        }
-    }
-}
+/* ================= UI SYSTEM ================= */
 
 @Composable
-fun CafeStockPage(onExportPdf: (List<CategorySection>) -> Unit) {
-    var categories by remember {
-        mutableStateOf(
-            listOf(
-                CategorySection("SNACKS", mutableListOf(
-                    StockItem(name = "Whittakers White Choc", parLevel = "48"),
-                    StockItem(name = "Whittakers Brown Choc", parLevel = "48"),
-                    StockItem(name = "ETA Nuts", parLevel = "24")
-                )),
-                CategorySection("PROPER CHIPS", mutableListOf(
-                    StockItem(name = "Sea Salt", parLevel = "18"),
-                    StockItem(name = "Cider Vinegar", parLevel = "18"),
-                    StockItem(name = "Garden Medly", parLevel = "18")
-                )),
-                CategorySection("BEERS", mutableListOf(
-                    StockItem(name = "Monteiths Black", parLevel = "12"),
-                    StockItem(name = "Monteiths Original Ale", parLevel = "12"),
-                    StockItem(name = "Parrot Dog Lager", parLevel = "12"),
-                    StockItem(name = "Tuatara Pilsner", parLevel = "12"),
-                    StockItem(name = "Garage Project TINY", parLevel = "12"),
-                    StockItem(name = "Steinlager Pure", parLevel = "24")
-                )),
-                CategorySection("PRE MIXES", mutableListOf(
-                    StockItem(name = "JD Whiskey & Cola", parLevel = "12"),
-                    StockItem(name = "Gordon's G & T", parLevel = "12"),
-                    StockItem(name = "Coruba R & C", parLevel = "12")
-                )),
-                CategorySection("WINES", mutableListOf(
-                    StockItem(name = "Merlot 187 ml", parLevel = "24"),
-                    StockItem(name = "Chardonnay 187 ml", parLevel = "24"),
-                    StockItem(name = "Sav Blanc 187 ml", parLevel = "24"),
-                    StockItem(name = "Lindauer 200 ml", parLevel = "24")
-                )),
-                CategorySection("SOFT DRINKS", mutableListOf(
-                    StockItem(name = "H2go Water 750ml", parLevel = "12"),
-                    StockItem(name = "NZ SP Water 500ml", parLevel = "18"),
-                    StockItem(name = "Bundaberg Lemon Lime", parLevel = "10"),
-                    StockItem(name = "Bundaberg Ginger Beer", parLevel = "10"),
-                    StockItem(name = "7 UP", parLevel = "10"),
-                    StockItem(name = "Pepsi", parLevel = "10"),
-                    StockItem(name = "Pepsi Max", parLevel = "10"),
-                    StockItem(name = "McCoy Orange Juice", parLevel = "15")
-                )),
-                CategorySection("750 ML WINE", mutableListOf(
-                    StockItem(name = "O/B Sparkling 750ml", parLevel = "4"),
-                    StockItem(name = "O/B Pinot Gris 750ml", parLevel = "4"),
-                    StockItem(name = "O/B Sav. Blanc 750ml", parLevel = "4"),
-                    StockItem(name = "O/B Pinot Noir 750ml", parLevel = "4")
-                ))
-            )
-        )
-    }
-
-    StockPageContent(
-        categories = categories,
-        onCategoriesUpdate = { categories = it },
-        onExportPdf = onExportPdf
-    )
-}
-
-@Composable
-fun AklWlgPage(onExportPdf: (List<CategorySection>) -> Unit) {
-    var categories by remember {
-        mutableStateOf(
-            listOf(
-                CategorySection("BREAKFAST", mutableListOf(
-                    StockItem(name = "Chia Seeds"),
-                    StockItem(name = "Fruit Salads"),
-                    StockItem(name = "Growers Breakfast"),
-                    StockItem(name = "Pancakes"),
-                    StockItem(name = "Breakfast Croissant")
-                )),
-                CategorySection("SWEETS", mutableListOf(
-                    StockItem(name = "Blueberry Muffins"),
-                    StockItem(name = "Cheese Scones"),
-                    StockItem(name = "Carrot Cake"),
-                    StockItem(name = "ANZAC Biscuit"),
-                    StockItem(name = "White Chocolate Biscuits")
-                )),
-                CategorySection("SALADS", mutableListOf(
-                    StockItem(name = "Leafy Salad"),
-                    StockItem(name = "Pasta Salad")
-                )),
-                CategorySection("SANDWICHES", mutableListOf(
-                    StockItem(name = "Ham and Cheese Toastie"),
-                    StockItem(name = "Chicken Sandwich"),
-                    StockItem(name = "Beef Sandwich"),
-                    StockItem(name = "Ham Sandwich"),
-                    StockItem(name = "Vegetarian Sandwich")
-                )),
-                CategorySection("HOT MEALS", mutableListOf(
-                    StockItem(name = "Beef Cheek"),
-                    StockItem(name = "Roast Chicken"),
-                    StockItem(name = "Lamb Shank"),
-                    StockItem(name = "Mac & Cheese"),
-                    StockItem(name = "Lasagne")
-                )),
-                CategorySection("PIES", mutableListOf(
-                    StockItem(name = "Steak and Cheese"),
-                    StockItem(name = "Vegetarian")
-                )),
-                CategorySection("SWEET AND CHEESY", mutableListOf(
-                    StockItem(name = "Cheeseboard")
-                )),
-                CategorySection("ICE CREAM", mutableListOf(
-                    StockItem(name = "Kapiti Boysenberry"),
-                    StockItem(name = "Kapiti Passionfruit"),
-                    StockItem(name = "Kapiti Chocolate Cups"),
-                    StockItem(name = "Memphis Blk Bikkie")
-                ))
-            )
-        )
-    }
-
-    StockPageContent(
-        categories = categories,
-        onCategoriesUpdate = { categories = it },
-        onExportPdf = onExportPdf
-    )
-}
-
-@Composable
-fun StockPageContent(
-    categories: List<CategorySection>,
-    onCategoriesUpdate: (List<CategorySection>) -> Unit,
-    onExportPdf: (List<CategorySection>) -> Unit
+fun MainScreen(
+    isDarkMode: Boolean,
+    onToggleDarkMode: () -> Unit,
+    onExportPdf: (String, List<CategorySection>, String, String, String, String) -> Unit
 ) {
-    var showAddCategoryDialog by remember { mutableStateOf(false) }
-    var showAddItemDialog by remember { mutableStateOf<Int?>(null) }
+
+    val sheet200 = remember { getPage1Categories() }
+
+    var osm by remember { mutableStateOf("") }
+    var tm by remember { mutableStateOf("") }
+    var crew by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf("") }
+
+    StockSheet(
+        pageName = "WLG-AKL-200",
+        categories = sheet200,
+        osm = osm,
+        tm = tm,
+        crew = crew,
+        date = date,
+        onOsmChange = { osm = it },
+        onTmChange = { tm = it },
+        onCrewChange = { crew = it },
+        onDateChange = { date = it },
+        isDarkMode = isDarkMode,
+        onToggleDarkMode = onToggleDarkMode,
+        onExportPdf = onExportPdf
+    )
+}
+
+@Composable
+fun StockSheet(
+    pageName: String,
+    categories: MutableList<CategorySection>,
+    osm: String,
+    tm: String,
+    crew: String,
+    date: String,
+    onOsmChange: (String) -> Unit,
+    onTmChange: (String) -> Unit,
+    onCrewChange: (String) -> Unit,
+    onDateChange: (String) -> Unit,
+    isDarkMode: Boolean,
+    onToggleDarkMode: () -> Unit,
+    onExportPdf: (String, List<CategorySection>, String, String, String, String) -> Unit
+) {
 
     Column(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(12.dp)
     ) {
-        // Action Buttons
+
+        // Top bar with title and dark mode toggle
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Text(
+                "WLG - AKL (200)",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            )
+
+            IconButton(onClick = onToggleDarkMode) {
+                Icon(
+                    imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    contentDescription = "Toggle Dark Mode"
+                )
+            }
+        }
+
+        Text(
+            "CLOSING STOCK - PREVIOUS DAY 201",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        // Info fields - more compact
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CompactTextField("OSM", osm, onOsmChange, Modifier.weight(1f))
+            CompactTextField("TM", tm, onTmChange, Modifier.weight(1f))
+            CompactTextField("CREW", crew, onCrewChange, Modifier.weight(1f))
+            CompactTextField("DATE", date, onDateChange, Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Action buttons
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+
             Button(
                 onClick = {
-                    val cleared = categories.map { category ->
-                        category.copy(items = category.items.map {
-                            it.copy(closingStock = "0", loadingAtAkl = "0", total = "0")
-                        }.toMutableList())
+                    categories.forEach { cat ->
+                        cat.rows.forEach {
+                            it.closingPrev = ""
+                            it.loading = ""
+                            it.total = ""
+                            it.sales = ""
+                            it.prePurchase = ""
+                            it.waste = ""
+                            it.endDay = ""
+                        }
                     }
-                    onCategoriesUpdate(cleared)
                 },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.tertiary
-                ),
-                modifier = Modifier.weight(1f).padding(end = 4.dp)
-            ) {
-                Icon(Icons.Default.Clear, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Clear All")
-            }
+                modifier = Modifier.weight(1f)
+            ) { Text("Clear All", fontSize = 12.sp) }
 
             Button(
-                onClick = { showAddCategoryDialog = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                ),
-                modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+                onClick = {
+                    onExportPdf(pageName, categories, osm, tm, crew, date)
+                },
+                modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Add Category")
-            }
-
-            Button(
-                onClick = { onExportPdf(categories) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary
-                ),
-                modifier = Modifier.weight(1f).padding(start = 4.dp)
-            ) {
-                Icon(Icons.Default.Email, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Email")
+                Text("Export PDF", fontSize = 12.sp)
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
 
-        // Categories and Items
-        categories.forEachIndexed { categoryIndex, category ->
-            // Category Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.primaryContainer)
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    category.name,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = { showAddItemDialog = categoryIndex }) {
-                    Icon(Icons.Default.Add, "Add Item")
-                }
-            }
+        // Compact Column Headers
+        CompactTableHeader()
 
-            // Table Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(8.dp)
-            ) {
-                Text("Item", modifier = Modifier.weight(2f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Text("Par", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
-                Text("Close", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
-                Text("Load", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
-                Text("Total", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
-                Spacer(modifier = Modifier.width(40.dp))
-            }
+        // Categories and rows
+        categories.forEach { category ->
+            CompactCategoryHeader(category.name)
 
-            // Items
-            category.items.forEachIndexed { itemIndex, item ->
-                StockItemRow(
-                    item = item,
-                    onUpdate = { updated ->
-                        val newCategories = categories.toMutableList()
-                        newCategories[categoryIndex].items[itemIndex] = updated
-                        onCategoriesUpdate(newCategories)
+            category.rows.forEachIndexed { index, row ->
+                CompactStockRow(
+                    row = row,
+                    onMoveUp = {
+                        if (index > 0) category.rows.swap(index, index - 1)
                     },
-                    onDelete = {
-                        val newCategories = categories.toMutableList()
-                        newCategories[categoryIndex].items.removeAt(itemIndex)
-                        onCategoriesUpdate(newCategories)
+                    onMoveDown = {
+                        if (index < category.rows.lastIndex) category.rows.swap(
+                            index,
+                            index + 1
+                        )
                     }
                 )
-                Divider()
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
-    }
 
-    // Add Category Dialog
-    if (showAddCategoryDialog) {
-        AddCategoryDialog(
-            onDismiss = { showAddCategoryDialog = false },
-            onAdd = { name ->
-                onCategoriesUpdate(categories + CategorySection(name, mutableListOf()))
-                showAddCategoryDialog = false
-            }
+        Spacer(Modifier.height(16.dp))
+
+        // Footer sections
+        Text(
+            "Notes:",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 4.dp)
         )
-    }
+        OutlinedTextField(
+            value = "",
+            onValueChange = {},
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(80.dp),
+            placeholder = { Text("Enter notes...") }
+        )
 
-    // Add Item Dialog
-    showAddItemDialog?.let { categoryIndex ->
-        AddItemDialog(
-            onDismiss = { showAddItemDialog = null },
-            onAdd = { name, parLevel ->
-                val newCategories = categories.toMutableList()
-                newCategories[categoryIndex].items.add(StockItem(name = name, parLevel = parLevel))
-                onCategoriesUpdate(newCategories)
-                showAddItemDialog = null
-            }
+        Spacer(Modifier.height(12.dp))
+
+        Text(
+            "Requirements:",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+        OutlinedTextField(
+            value = "",
+            onValueChange = {},
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(80.dp),
+            placeholder = { Text("Enter requirements...") }
         )
     }
 }
 
 @Composable
-fun StockItemRow(
-    item: StockItem,
-    onUpdate: (StockItem) -> Unit,
-    onDelete: () -> Unit
+fun CompactTextField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    var showMenu by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, fontSize = 10.sp) },
+        modifier = modifier.height(50.dp),
+        singleLine = true,
+        textStyle = LocalTextStyle.current.copy(fontSize = 11.sp)
+    )
+}
 
+@Composable
+fun CompactTableHeader() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .border(1.dp, MaterialTheme.colorScheme.outline)
+            .padding(vertical = 6.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            item.name,
-            modifier = Modifier.weight(2f),
-            fontSize = 13.sp
-        )
+        Box(modifier = Modifier.width(24.dp)) // Drag handle space
 
+        Text("Product", fontSize = 9.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(2.5f))
+        Text("Close", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Text("Load", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Text("Total", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Text("Sales", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Text("Pre", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Text("Waste", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Text("End", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+
+        Box(modifier = Modifier.width(40.dp)) // Move buttons space
+    }
+}
+
+@Composable
+fun CompactCategoryHeader(name: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .border(1.dp, MaterialTheme.colorScheme.outline)
+            .padding(8.dp)
+    ) {
         Text(
-            item.parLevel,
-            modifier = Modifier.weight(0.8f),
-            fontSize = 12.sp,
+            name,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 12.sp
+        )
+    }
+}
+
+@Composable
+fun CompactStockRow(
+    row: StockRow,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit
+) {
+    var isDragging by remember { mutableStateOf(false) }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (isDragging) MaterialTheme.colorScheme.surfaceVariant
+                else MaterialTheme.colorScheme.surface
+            )
+            .border(0.5.dp, MaterialTheme.colorScheme.outline)
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { isDragging = true },
+                    onDragEnd = { isDragging = false },
+                    onDragCancel = { isDragging = false },
+                    onDrag = { _, _ -> }
+                )
+            }
+            .padding(vertical = 4.dp, horizontal = 4.dp)
+    ) {
+
+        // Drag handle
+        Text(
+            "☰",
+            fontSize = 14.sp,
+            modifier = Modifier.width(24.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
 
-        OutlinedTextField(
-            value = item.closingStock,
-            onValueChange = {
-                val updated = item.copy(closingStock = it)
-                calculateTotal(updated)
-                onUpdate(updated)
-            },
-            modifier = Modifier
-                .weight(0.8f)
-                .padding(horizontal = 2.dp),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center, fontSize = 12.sp)
-        )
-
-        OutlinedTextField(
-            value = item.loadingAtAkl,
-            onValueChange = {
-                val updated = item.copy(loadingAtAkl = it)
-                calculateTotal(updated)
-                onUpdate(updated)
-            },
-            modifier = Modifier
-                .weight(0.8f)
-                .padding(horizontal = 2.dp),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center, fontSize = 12.sp)
-        )
-
+        // Product name
         Text(
-            item.total,
-            modifier = Modifier.weight(0.8f),
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center,
-            fontWeight = FontWeight.Bold
+            row.product,
+            fontSize = 10.sp,
+            modifier = Modifier.weight(2.5f)
         )
 
-        Box {
-            IconButton(onClick = { showMenu = true }) {
-                Icon(Icons.Default.MoreVert, "Options", modifier = Modifier.size(20.dp))
-            }
+        // Numeric fields
+        CompactNumericField(row.closingPrev, Modifier.weight(1f)) { row.closingPrev = it }
+        CompactNumericField(row.loading, Modifier.weight(1f)) { row.loading = it }
+        CompactNumericField(row.total, Modifier.weight(1f)) { row.total = it }
+        CompactNumericField(row.sales, Modifier.weight(1f)) { row.sales = it }
+        CompactNumericField(row.prePurchase, Modifier.weight(1f)) { row.prePurchase = it }
+        CompactNumericField(row.waste, Modifier.weight(1f)) { row.waste = it }
+        CompactNumericField(row.endDay, Modifier.weight(1f)) { row.endDay = it }
 
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false }
+        // Move buttons
+        Column(
+            modifier = Modifier.width(40.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            IconButton(
+                onClick = onMoveUp,
+                modifier = Modifier.size(20.dp)
             ) {
-                DropdownMenuItem(
-                    text = { Text("Delete") },
-                    onClick = {
-                        onDelete()
-                        showMenu = false
-                    },
-                    leadingIcon = { Icon(Icons.Default.Delete, null) }
-                )
+                Text("▲", fontSize = 10.sp)
+            }
+            IconButton(
+                onClick = onMoveDown,
+                modifier = Modifier.size(20.dp)
+            ) {
+                Text("▼", fontSize = 10.sp)
             }
         }
     }
 }
 
-fun calculateTotal(item: StockItem) {
-    val closing = item.closingStock.toIntOrNull() ?: 0
-    val loading = item.loadingAtAkl.toIntOrNull() ?: 0
-    item.total = (closing + loading).toString()
-}
-
 @Composable
-fun AddCategoryDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
-    var categoryName by remember { mutableStateOf("") }
+fun CompactNumericField(value: String, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+    var textValue by remember(value) { mutableStateOf(value) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add New Category") },
-        text = {
-            OutlinedTextField(
-                value = categoryName,
-                onValueChange = { categoryName = it },
-                label = { Text("Category Name") },
-                singleLine = true
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (categoryName.isNotBlank()) onAdd(categoryName.uppercase()) },
-                enabled = categoryName.isNotBlank()
-            ) {
-                Text("Add")
+    BasicTextField(
+        value = textValue,
+        onValueChange = { newValue ->
+            // Allow empty or numeric values
+            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
+                textValue = newValue
+                onChange(newValue)
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+        modifier = modifier
+            .padding(horizontal = 2.dp)
+            .height(36.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(0.5.dp, MaterialTheme.colorScheme.outline),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        textStyle = LocalTextStyle.current.copy(
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface
+        ),
+        decorationBox = { innerTextField ->
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                innerTextField()
             }
         }
     )
 }
 
-@Composable
-fun AddItemDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
-    var itemName by remember { mutableStateOf("") }
-    var parLevel by remember { mutableStateOf("") }
+/* ================= DATA INITIALIZATION ================= */
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add New Item") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = itemName,
-                    onValueChange = { itemName = it },
-                    label = { Text("Item Name") },
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = parLevel,
-                    onValueChange = { parLevel = it },
-                    label = { Text("Par Level") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (itemName.isNotBlank()) onAdd(itemName, parLevel) },
-                enabled = itemName.isNotBlank()
-            ) {
-                Text("Add")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
+fun getPage1Categories(): MutableList<CategorySection> {
+    return mutableListOf(
+        CategorySection("BREAKFAST", mutableListOf(
+            StockRow(product = "Growers Breakfast"),
+            StockRow(product = "Breakfast Croissant"),
+            StockRow(product = "Big Breakfast"),
+            StockRow(product = "Pancakes"),
+            StockRow(product = "Chia Seeds"),
+            StockRow(product = "Fruit Salads")
+        )),
+        CategorySection("SWEETS", mutableListOf(
+            StockRow(product = "Brownie Slices"),
+            StockRow(product = "Cookie Time Biscuits"),
+            StockRow(product = "Cookie Time GF Biscuits"),
+            StockRow(product = "Carrot Cake"),
+            StockRow(product = "ANZAC Biscuits"),
+            StockRow(product = "Blueberry Muffins"),
+            StockRow(product = "Cheese Scones")
+        )),
+        CategorySection("SALADS", mutableListOf(
+            StockRow(product = "Leafy Salad"),
+            StockRow(product = "Smoked Chicken Pasta Salad")
+        )),
+        CategorySection("SANDWICHES AND WRAP", mutableListOf(
+            StockRow(product = "BLT"),
+            StockRow(product = "Chicken Wrap"),
+            StockRow(product = "Beef Pickle"),
+            StockRow(product = "Ham and Cheese Toastie")
+        )),
+        CategorySection("HOT MEALS", mutableListOf(
+            StockRow(product = "Mac & Cheese"),
+            StockRow(product = "Lasagne"),
+            StockRow(product = "Roast Chicken"),
+            StockRow(product = "Lamb Shank"),
+            StockRow(product = "Beef Cheek")
+        )),
+        CategorySection("PIES", mutableListOf(
+            StockRow(product = "Steak and Cheese"),
+            StockRow(product = "Vegetarian")
+        )),
+        CategorySection("SWEET AND ICE CREAM", mutableListOf(
+            StockRow(product = "KAPITI BOYSENBERRY"),
+            StockRow(product = "KAPITI PASSIONFRUIT"),
+            StockRow(product = "KAPITI CHOCOLATE CUPS"),
+            StockRow(product = "MEMPHIS BIK BIKKIE")
+        )),
+        CategorySection("CHEESEBOARD", mutableListOf(
+            StockRow(product = "Cheeseboard")
+        ))
     )
+}
+
+fun <T> MutableList<T>.swap(i: Int, j: Int) {
+    val temp = this[i]
+    this[i] = this[j]
+    this[j] = temp
 }
