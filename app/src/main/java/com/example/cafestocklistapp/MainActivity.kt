@@ -1,5 +1,6 @@
 package com.example.cafestocklistapp
 
+import android.app.DatePickerDialog
 import android.content.Intent
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
@@ -9,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +18,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.*
@@ -24,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -271,16 +275,16 @@ fun StockSheet(
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        // Info fields - more compact
+        // Info fields with placeholders
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            CompactTextField("OSM", osm, onOsmChange, Modifier.weight(1f))
-            CompactTextField("TM", tm, onTmChange, Modifier.weight(1f))
-            CompactTextField("CREW", crew, onCrewChange, Modifier.weight(1f))
-            CompactTextField("DATE", date, onDateChange, Modifier.weight(1f))
+            PlaceholderTextField("OSM", osm, onOsmChange, Modifier.weight(1f))
+            PlaceholderTextField("TM", tm, onTmChange, Modifier.weight(1f))
+            PlaceholderTextField("CREW", crew, onCrewChange, Modifier.weight(1f))
+            DatePickerField("DATE", date, onDateChange, Modifier.weight(1f))
         }
 
         Spacer(Modifier.height(8.dp))
@@ -328,7 +332,7 @@ fun StockSheet(
             CompactCategoryHeader(category.name)
 
             category.rows.forEachIndexed { index, row ->
-                CompactStockRow(
+                DraggableStockRow(
                     row = row,
                     onMoveUp = {
                         if (index > 0) category.rows.swap(index, index - 1)
@@ -381,20 +385,100 @@ fun StockSheet(
 }
 
 @Composable
-fun CompactTextField(
-    label: String,
+fun PlaceholderTextField(
+    placeholder: String,
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    OutlinedTextField(
+    BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, fontSize = 10.sp) },
-        modifier = modifier.height(50.dp),
+        modifier = modifier
+            .height(48.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape = MaterialTheme.shapes.small)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
         singleLine = true,
-        textStyle = LocalTextStyle.current.copy(fontSize = 11.sp)
+        textStyle = LocalTextStyle.current.copy(
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface
+        ),
+        decorationBox = { innerTextField ->
+            if (value.isEmpty()) {
+                Text(
+                    placeholder,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+            innerTextField()
+        }
     )
+}
+
+@Composable
+fun DatePickerField(
+    placeholder: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val calendar = Calendar.getInstance()
+
+    // Parse existing date if present
+    if (value.isNotEmpty()) {
+        try {
+            val sdf = SimpleDateFormat("dd/MM/yy", Locale.getDefault())
+            calendar.time = sdf.parse(value) ?: Date()
+        } catch (e: Exception) {
+            // Use current date if parsing fails
+        }
+    }
+
+    val datePickerDialog = DatePickerDialog(
+        context,
+        { _, year, month, dayOfMonth ->
+            val selectedDate = Calendar.getInstance()
+            selectedDate.set(year, month, dayOfMonth)
+            val sdf = SimpleDateFormat("dd/MM/yy", Locale.getDefault())
+            onValueChange(sdf.format(selectedDate.time))
+        },
+        calendar.get(Calendar.YEAR),
+        calendar.get(Calendar.MONTH),
+        calendar.get(Calendar.DAY_OF_MONTH)
+    )
+
+    Box(
+        modifier = modifier
+            .height(48.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape = MaterialTheme.shapes.small)
+            .clickable { datePickerDialog.show() }
+            .padding(horizontal = 12.dp, vertical = 14.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = value.ifEmpty { placeholder },
+                fontSize = 13.sp,
+                color = if (value.isEmpty())
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                else
+                    MaterialTheme.colorScheme.onSurface
+            )
+            Icon(
+                imageVector = Icons.Default.CalendarToday,
+                contentDescription = "Select Date",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable
@@ -404,21 +488,64 @@ fun CompactTableHeader() {
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.primaryContainer)
             .border(1.dp, MaterialTheme.colorScheme.outline)
-            .padding(vertical = 6.dp, horizontal = 4.dp),
+            .padding(vertical = 8.dp, horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.width(24.dp)) // Drag handle space
-
-        Text("Product", fontSize = 9.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(2.5f))
-        Text("Close", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-        Text("Load", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-        Text("Total", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-        Text("Sales", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-        Text("Pre", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-        Text("Waste", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-        Text("End", fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-
-        Box(modifier = Modifier.width(40.dp)) // Move buttons space
+        Text(
+            "Product",
+            fontSize = 9.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.weight(2.8f)
+        )
+        Text(
+            "Close",
+            fontSize = 8.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center
+        )
+        Text(
+            "Load",
+            fontSize = 8.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center
+        )
+        Text(
+            "Total",
+            fontSize = 8.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center
+        )
+        Text(
+            "Sales",
+            fontSize = 8.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center
+        )
+        Text(
+            "Pre",
+            fontSize = 8.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center
+        )
+        Text(
+            "Waste",
+            fontSize = 8.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center
+        )
+        Text(
+            "End",
+            fontSize = 8.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -441,7 +568,7 @@ fun CompactCategoryHeader(name: String) {
 }
 
 @Composable
-fun CompactStockRow(
+fun DraggableStockRow(
     row: StockRow,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit
@@ -462,29 +589,27 @@ fun CompactStockRow(
                     onDragStart = { isDragging = true },
                     onDragEnd = { isDragging = false },
                     onDragCancel = { isDragging = false },
-                    onDrag = { _, _ -> }
+                    onDrag = { change, dragAmount ->
+                        // Detect drag direction
+                        if (dragAmount.y < -20) {
+                            onMoveUp()
+                        } else if (dragAmount.y > 20) {
+                            onMoveDown()
+                        }
+                    }
                 )
             }
-            .padding(vertical = 4.dp, horizontal = 4.dp)
+            .padding(vertical = 4.dp, horizontal = 6.dp)
     ) {
 
-        // Drag handle
-        Text(
-            "☰",
-            fontSize = 14.sp,
-            modifier = Modifier.width(24.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-
-        // Product name
+        // Product name - more space
         Text(
             row.product,
             fontSize = 10.sp,
-            modifier = Modifier.weight(2.5f)
+            modifier = Modifier.weight(2.8f)
         )
 
-        // Numeric fields
+        // Numeric fields - more space each
         CompactNumericField(row.closingPrev, Modifier.weight(1f)) { row.closingPrev = it }
         CompactNumericField(row.loading, Modifier.weight(1f)) { row.loading = it }
         CompactNumericField(row.total, Modifier.weight(1f)) { row.total = it }
@@ -492,25 +617,6 @@ fun CompactStockRow(
         CompactNumericField(row.prePurchase, Modifier.weight(1f)) { row.prePurchase = it }
         CompactNumericField(row.waste, Modifier.weight(1f)) { row.waste = it }
         CompactNumericField(row.endDay, Modifier.weight(1f)) { row.endDay = it }
-
-        // Move buttons
-        Column(
-            modifier = Modifier.width(40.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            IconButton(
-                onClick = onMoveUp,
-                modifier = Modifier.size(20.dp)
-            ) {
-                Text("▲", fontSize = 10.sp)
-            }
-            IconButton(
-                onClick = onMoveDown,
-                modifier = Modifier.size(20.dp)
-            ) {
-                Text("▼", fontSize = 10.sp)
-            }
-        }
     }
 }
 
@@ -529,7 +635,7 @@ fun CompactNumericField(value: String, modifier: Modifier = Modifier, onChange: 
         },
         modifier = modifier
             .padding(horizontal = 2.dp)
-            .height(36.dp)
+            .height(38.dp)
             .background(MaterialTheme.colorScheme.surface)
             .border(0.5.dp, MaterialTheme.colorScheme.outline),
         singleLine = true,
