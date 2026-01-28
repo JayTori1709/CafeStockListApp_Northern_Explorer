@@ -207,6 +207,9 @@ fun MainScreen(
     var crew by remember { mutableStateOf("") }
     var date by remember { mutableStateOf("") }
 
+    // Trigger to force recomposition
+    var clearTrigger by remember { mutableStateOf(0) }
+
     StockSheet(
         pageName = "WLG-AKL-200",
         categories = sheet200,
@@ -220,6 +223,8 @@ fun MainScreen(
         onDateChange = { date = it },
         isDarkMode = isDarkMode,
         onToggleDarkMode = onToggleDarkMode,
+        clearTrigger = clearTrigger,
+        onClearAll = { clearTrigger++ },
         onExportPdf = onExportPdf
     )
 }
@@ -238,6 +243,8 @@ fun StockSheet(
     onDateChange: (String) -> Unit,
     isDarkMode: Boolean,
     onToggleDarkMode: () -> Unit,
+    clearTrigger: Int,
+    onClearAll: () -> Unit,
     onExportPdf: (String, List<CategorySection>, String, String, String, String) -> Unit
 ) {
 
@@ -298,16 +305,17 @@ fun StockSheet(
             Button(
                 onClick = {
                     categories.forEach { cat ->
-                        cat.rows.forEach {
-                            it.closingPrev = ""
-                            it.loading = ""
-                            it.total = ""
-                            it.sales = ""
-                            it.prePurchase = ""
-                            it.waste = ""
-                            it.endDay = ""
+                        cat.rows.forEach { row ->
+                            row.closingPrev = ""
+                            row.loading = ""
+                            row.total = ""
+                            row.sales = ""
+                            row.prePurchase = ""
+                            row.waste = ""
+                            row.endDay = ""
                         }
                     }
+                    onClearAll() // Trigger recomposition
                 },
                 modifier = Modifier.weight(1f)
             ) { Text("Clear All", fontSize = 12.sp) }
@@ -334,6 +342,7 @@ fun StockSheet(
             category.rows.forEachIndexed { index, row ->
                 DraggableStockRow(
                     row = row,
+                    clearTrigger = clearTrigger,
                     onMoveUp = {
                         if (index > 0) category.rows.swap(index, index - 1)
                     },
@@ -570,10 +579,23 @@ fun CompactCategoryHeader(name: String) {
 @Composable
 fun DraggableStockRow(
     row: StockRow,
+    clearTrigger: Int,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit
 ) {
     var isDragging by remember { mutableStateOf(false) }
+
+    // Auto-calculate total when Close or Load changes
+    LaunchedEffect(row.closingPrev, row.loading) {
+        val close = row.closingPrev.toIntOrNull() ?: 0
+        val load = row.loading.toIntOrNull() ?: 0
+        val total = close + load
+        row.total = if (total > 0 || row.closingPrev.isNotEmpty() || row.loading.isNotEmpty()) {
+            total.toString()
+        } else {
+            ""
+        }
+    }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -609,20 +631,28 @@ fun DraggableStockRow(
             modifier = Modifier.weight(2.8f)
         )
 
-        // Numeric fields - more space each
-        CompactNumericField(row.closingPrev, Modifier.weight(1f)) { row.closingPrev = it }
-        CompactNumericField(row.loading, Modifier.weight(1f)) { row.loading = it }
-        CompactNumericField(row.total, Modifier.weight(1f)) { row.total = it }
-        CompactNumericField(row.sales, Modifier.weight(1f)) { row.sales = it }
-        CompactNumericField(row.prePurchase, Modifier.weight(1f)) { row.prePurchase = it }
-        CompactNumericField(row.waste, Modifier.weight(1f)) { row.waste = it }
-        CompactNumericField(row.endDay, Modifier.weight(1f)) { row.endDay = it }
+        // Numeric fields
+        CompactNumericField(row.closingPrev, Modifier.weight(1f), clearTrigger) { row.closingPrev = it }
+        CompactNumericField(row.loading, Modifier.weight(1f), clearTrigger) { row.loading = it }
+
+        // Total field - READ ONLY (auto-calculated)
+        ReadOnlyNumericField(row.total, Modifier.weight(1f))
+
+        CompactNumericField(row.sales, Modifier.weight(1f), clearTrigger) { row.sales = it }
+        CompactNumericField(row.prePurchase, Modifier.weight(1f), clearTrigger) { row.prePurchase = it }
+        CompactNumericField(row.waste, Modifier.weight(1f), clearTrigger) { row.waste = it }
+        CompactNumericField(row.endDay, Modifier.weight(1f), clearTrigger) { row.endDay = it }
     }
 }
 
 @Composable
-fun CompactNumericField(value: String, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
-    var textValue by remember(value) { mutableStateOf(value) }
+fun CompactNumericField(
+    value: String,
+    modifier: Modifier = Modifier,
+    clearTrigger: Int = 0,
+    onChange: (String) -> Unit
+) {
+    var textValue by remember(value, clearTrigger) { mutableStateOf(value) }
 
     BasicTextField(
         value = textValue,
@@ -654,6 +684,26 @@ fun CompactNumericField(value: String, modifier: Modifier = Modifier, onChange: 
             }
         }
     )
+}
+
+@Composable
+fun ReadOnlyNumericField(value: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .padding(horizontal = 2.dp)
+            .height(38.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(0.5.dp, MaterialTheme.colorScheme.outline),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = value,
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+        )
+    }
 }
 
 /* ================= DATA INITIALIZATION ================= */
