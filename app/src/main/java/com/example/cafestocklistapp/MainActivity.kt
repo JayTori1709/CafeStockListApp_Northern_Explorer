@@ -585,17 +585,26 @@ fun DraggableStockRow(
 ) {
     var isDragging by remember { mutableStateOf(false) }
 
-    // Auto-calculate total when Close or Load changes
-    LaunchedEffect(row.closingPrev, row.loading) {
-        val close = row.closingPrev.toIntOrNull() ?: 0
-        val load = row.loading.toIntOrNull() ?: 0
-        val total = close + load
-        row.total = if (total > 0 || row.closingPrev.isNotEmpty() || row.loading.isNotEmpty()) {
-            total.toString()
-        } else {
-            ""
+    // Use state variables to track Close and Load for immediate updates
+    var closeValue by remember(clearTrigger) { mutableStateOf(row.closingPrev) }
+    var loadValue by remember(clearTrigger) { mutableStateOf(row.loading) }
+
+    // Calculate total whenever Close or Load changes
+    val calculatedTotal by remember {
+        derivedStateOf {
+            val close = closeValue.toIntOrNull() ?: 0
+            val load = loadValue.toIntOrNull() ?: 0
+            val total = close + load
+            if (total > 0 || closeValue.isNotEmpty() || loadValue.isNotEmpty()) {
+                total.toString()
+            } else {
+                ""
+            }
         }
     }
+
+    // Update the row's total
+    row.total = calculatedTotal
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -631,12 +640,18 @@ fun DraggableStockRow(
             modifier = Modifier.weight(2.8f)
         )
 
-        // Numeric fields
-        CompactNumericField(row.closingPrev, Modifier.weight(1f), clearTrigger) { row.closingPrev = it }
-        CompactNumericField(row.loading, Modifier.weight(1f), clearTrigger) { row.loading = it }
+        // Numeric fields with state tracking
+        CompactNumericField(closeValue, Modifier.weight(1f), clearTrigger) {
+            closeValue = it
+            row.closingPrev = it
+        }
+        CompactNumericField(loadValue, Modifier.weight(1f), clearTrigger) {
+            loadValue = it
+            row.loading = it
+        }
 
         // Total field - READ ONLY (auto-calculated)
-        ReadOnlyNumericField(row.total, Modifier.weight(1f))
+        ReadOnlyNumericField(calculatedTotal, Modifier.weight(1f))
 
         CompactNumericField(row.sales, Modifier.weight(1f), clearTrigger) { row.sales = it }
         CompactNumericField(row.prePurchase, Modifier.weight(1f), clearTrigger) { row.prePurchase = it }
