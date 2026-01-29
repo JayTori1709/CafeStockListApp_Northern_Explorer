@@ -14,10 +14,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
@@ -25,6 +27,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -100,13 +103,13 @@ class MainActivity : ComponentActivity() {
         // Title
         paint.textSize = 28f
         paint.isFakeBoldText = true
-        canvas.drawText("WLG - AKL (200) CLOSING STOCK", 40f, 50f, paint)
+        canvas.drawText("$pageName CLOSING STOCK", 40f, 50f, paint)
 
         // Header info
         paint.textSize = 14f
         paint.isFakeBoldText = false
         canvas.drawText("OSM: $osm / TM: $tm / CREW: $crew / DATE: $date", 40f, 80f, paint)
-        canvas.drawText("PREVIOUS DAY 201", 40f, 100f, paint)
+        canvas.drawText("PREVIOUS DAY", 40f, 100f, paint)
 
         var y = 140f
 
@@ -199,39 +202,185 @@ fun MainScreen(
     onToggleDarkMode: () -> Unit,
     onExportPdf: (String, List<CategorySection>, String, String, String, String) -> Unit
 ) {
+    // Track which screen we're on: null = home, "200" = WLG-AKL, "201" = AKL-WLG
+    var selectedTrip by remember { mutableStateOf<String?>(null) }
 
-    val sheet200 = remember { getPage1Categories() }
+    when (selectedTrip) {
+        null -> {
+            // Home screen - trip selection
+            TripSelectionScreen(
+                isDarkMode = isDarkMode,
+                onToggleDarkMode = onToggleDarkMode,
+                onTripSelected = { trip -> selectedTrip = trip }
+            )
+        }
+        "200" -> {
+            // WLG to AKL (200) stock sheet
+            val sheet200 = remember { getPage1Categories() }
+            var osm by remember { mutableStateOf("") }
+            var tm by remember { mutableStateOf("") }
+            var crew by remember { mutableStateOf("") }
+            var date by remember { mutableStateOf("") }
+            var clearTrigger by remember { mutableStateOf(0) }
 
-    var osm by remember { mutableStateOf("") }
-    var tm by remember { mutableStateOf("") }
-    var crew by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf("") }
+            StockSheet(
+                pageName = "WLG-AKL-200",
+                displayTitle = "WLG → AKL (200)",
+                categories = sheet200,
+                osm = osm,
+                tm = tm,
+                crew = crew,
+                date = date,
+                onOsmChange = { osm = it },
+                onTmChange = { tm = it },
+                onCrewChange = { crew = it },
+                onDateChange = { date = it },
+                isDarkMode = isDarkMode,
+                onToggleDarkMode = onToggleDarkMode,
+                clearTrigger = clearTrigger,
+                onClearAll = { clearTrigger++ },
+                onBack = { selectedTrip = null },
+                onExportPdf = onExportPdf
+            )
+        }
+        "201" -> {
+            // AKL to WLG (201) stock sheet
+            val sheet201 = remember { getPage2Categories() }
+            var osm by remember { mutableStateOf("") }
+            var tm by remember { mutableStateOf("") }
+            var crew by remember { mutableStateOf("") }
+            var date by remember { mutableStateOf("") }
+            var clearTrigger by remember { mutableStateOf(0) }
 
-    // Trigger to force recomposition
-    var clearTrigger by remember { mutableStateOf(0) }
-
-    StockSheet(
-        pageName = "WLG-AKL-200",
-        categories = sheet200,
-        osm = osm,
-        tm = tm,
-        crew = crew,
-        date = date,
-        onOsmChange = { osm = it },
-        onTmChange = { tm = it },
-        onCrewChange = { crew = it },
-        onDateChange = { date = it },
-        isDarkMode = isDarkMode,
-        onToggleDarkMode = onToggleDarkMode,
-        clearTrigger = clearTrigger,
-        onClearAll = { clearTrigger++ },
-        onExportPdf = onExportPdf
-    )
+            StockSheet(
+                pageName = "AKL-WLG-201",
+                displayTitle = "AKL → WLG (201)",
+                categories = sheet201,
+                osm = osm,
+                tm = tm,
+                crew = crew,
+                date = date,
+                onOsmChange = { osm = it },
+                onTmChange = { tm = it },
+                onCrewChange = { crew = it },
+                onDateChange = { date = it },
+                isDarkMode = isDarkMode,
+                onToggleDarkMode = onToggleDarkMode,
+                clearTrigger = clearTrigger,
+                onClearAll = { clearTrigger++ },
+                onBack = { selectedTrip = null },
+                onExportPdf = onExportPdf
+            )
+        }
+    }
 }
 
 @Composable
+fun TripSelectionScreen(
+    isDarkMode: Boolean,
+    onToggleDarkMode: () -> Unit,
+    onTripSelected: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Dark mode toggle
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            IconButton(onClick = onToggleDarkMode) {
+                Icon(
+                    imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    contentDescription = "Toggle Dark Mode"
+                )
+            }
+        }
+
+        Spacer(Modifier.height(40.dp))
+
+        // Title
+        Text(
+            "Cafe Stock Sheet",
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            "What trip are we doing today?",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(Modifier.height(48.dp))
+
+        // Trip buttons
+        TripButton(
+            title = "WLG → AKL",
+            subtitle = "Service 200",
+            onClick = { onTripSelected("200") }
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        TripButton(
+            title = "AKL → WLG",
+            subtitle = "Service 201",
+            onClick = { onTripSelected("201") }
+        )
+    }
+}
+
+@Composable
+fun TripButton(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp)
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun StockSheet(
     pageName: String,
+    displayTitle: String,
     categories: MutableList<CategorySection>,
     osm: String,
     tm: String,
@@ -245,6 +394,7 @@ fun StockSheet(
     onToggleDarkMode: () -> Unit,
     clearTrigger: Int,
     onClearAll: () -> Unit,
+    onBack: () -> Unit,
     onExportPdf: (String, List<CategorySection>, String, String, String, String) -> Unit
 ) {
 
@@ -255,14 +405,21 @@ fun StockSheet(
             .padding(12.dp)
     ) {
 
-        // Top bar with title and dark mode toggle
+        // Top bar with back button, title and dark mode toggle
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back to Home"
+                )
+            }
+
             Text(
-                "WLG - AKL (200)",
+                displayTitle,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
             )
@@ -276,7 +433,7 @@ fun StockSheet(
         }
 
         Text(
-            "CLOSING STOCK - PREVIOUS DAY 201",
+            "CLOSING STOCK - PREVIOUS DAY",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
             modifier = Modifier.padding(bottom = 8.dp)
@@ -315,7 +472,7 @@ fun StockSheet(
                             row.endDay = ""
                         }
                     }
-                    onClearAll() // Trigger recomposition
+                    onClearAll()
                 },
                 modifier = Modifier.weight(1f)
             ) { Text("Clear All", fontSize = 12.sp) }
@@ -436,7 +593,6 @@ fun DatePickerField(
     val context = LocalContext.current
     val calendar = Calendar.getInstance()
 
-    // Parse existing date if present
     if (value.isNotEmpty()) {
         try {
             val sdf = SimpleDateFormat("dd/MM/yy", Locale.getDefault())
@@ -585,11 +741,9 @@ fun DraggableStockRow(
 ) {
     var isDragging by remember { mutableStateOf(false) }
 
-    // Use state variables to track Close and Load for immediate updates
     var closeValue by remember(clearTrigger) { mutableStateOf(row.closingPrev) }
     var loadValue by remember(clearTrigger) { mutableStateOf(row.loading) }
 
-    // Calculate total whenever Close or Load changes
     val calculatedTotal by remember {
         derivedStateOf {
             val close = closeValue.toIntOrNull() ?: 0
@@ -603,7 +757,6 @@ fun DraggableStockRow(
         }
     }
 
-    // Update the row's total
     row.total = calculatedTotal
 
     Row(
@@ -621,7 +774,6 @@ fun DraggableStockRow(
                     onDragEnd = { isDragging = false },
                     onDragCancel = { isDragging = false },
                     onDrag = { change, dragAmount ->
-                        // Detect drag direction
                         if (dragAmount.y < -20) {
                             onMoveUp()
                         } else if (dragAmount.y > 20) {
@@ -633,14 +785,12 @@ fun DraggableStockRow(
             .padding(vertical = 4.dp, horizontal = 6.dp)
     ) {
 
-        // Product name - more space
         Text(
             row.product,
             fontSize = 10.sp,
             modifier = Modifier.weight(2.8f)
         )
 
-        // Numeric fields with state tracking
         CompactNumericField(closeValue, Modifier.weight(1f), clearTrigger) {
             closeValue = it
             row.closingPrev = it
@@ -650,7 +800,6 @@ fun DraggableStockRow(
             row.loading = it
         }
 
-        // Total field - READ ONLY (auto-calculated)
         ReadOnlyNumericField(calculatedTotal, Modifier.weight(1f))
 
         CompactNumericField(row.sales, Modifier.weight(1f), clearTrigger) { row.sales = it }
@@ -672,7 +821,6 @@ fun CompactNumericField(
     BasicTextField(
         value = textValue,
         onValueChange = { newValue ->
-            // Allow empty or numeric values
             if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
                 textValue = newValue
                 onChange(newValue)
@@ -724,6 +872,59 @@ fun ReadOnlyNumericField(value: String, modifier: Modifier = Modifier) {
 /* ================= DATA INITIALIZATION ================= */
 
 fun getPage1Categories(): MutableList<CategorySection> {
+    return mutableListOf(
+        CategorySection("BREAKFAST", mutableListOf(
+            StockRow(product = "Growers Breakfast"),
+            StockRow(product = "Breakfast Croissant"),
+            StockRow(product = "Big Breakfast"),
+            StockRow(product = "Pancakes"),
+            StockRow(product = "Chia Seeds"),
+            StockRow(product = "Fruit Salads")
+        )),
+        CategorySection("SWEETS", mutableListOf(
+            StockRow(product = "Brownie Slices"),
+            StockRow(product = "Cookie Time Biscuits"),
+            StockRow(product = "Cookie Time GF Biscuits"),
+            StockRow(product = "Carrot Cake"),
+            StockRow(product = "ANZAC Biscuits"),
+            StockRow(product = "Blueberry Muffins"),
+            StockRow(product = "Cheese Scones")
+        )),
+        CategorySection("SALADS", mutableListOf(
+            StockRow(product = "Leafy Salad"),
+            StockRow(product = "Smoked Chicken Pasta Salad")
+        )),
+        CategorySection("SANDWICHES AND WRAP", mutableListOf(
+            StockRow(product = "BLT"),
+            StockRow(product = "Chicken Wrap"),
+            StockRow(product = "Beef Pickle"),
+            StockRow(product = "Ham and Cheese Toastie")
+        )),
+        CategorySection("HOT MEALS", mutableListOf(
+            StockRow(product = "Mac & Cheese"),
+            StockRow(product = "Lasagne"),
+            StockRow(product = "Roast Chicken"),
+            StockRow(product = "Lamb Shank"),
+            StockRow(product = "Beef Cheek")
+        )),
+        CategorySection("PIES", mutableListOf(
+            StockRow(product = "Steak and Cheese"),
+            StockRow(product = "Vegetarian")
+        )),
+        CategorySection("SWEET AND ICE CREAM", mutableListOf(
+            StockRow(product = "KAPITI BOYSENBERRY"),
+            StockRow(product = "KAPITI PASSIONFRUIT"),
+            StockRow(product = "KAPITI CHOCOLATE CUPS"),
+            StockRow(product = "MEMPHIS BIK BIKKIE")
+        )),
+        CategorySection("CHEESEBOARD", mutableListOf(
+            StockRow(product = "Cheeseboard")
+        ))
+    )
+}
+
+// Page 2 categories (201 - different products for the return trip)
+fun getPage2Categories(): MutableList<CategorySection> {
     return mutableListOf(
         CategorySection("BREAKFAST", mutableListOf(
             StockRow(product = "Growers Breakfast"),
