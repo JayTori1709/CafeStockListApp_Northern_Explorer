@@ -14,7 +14,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -27,7 +26,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -44,6 +42,7 @@ import java.util.*
 
 /* -------------------- DATA MODELS -------------------- */
 
+// Food stock data model
 data class StockRow(
     val id: String = UUID.randomUUID().toString(),
     var product: String,
@@ -61,6 +60,27 @@ data class CategorySection(
     val rows: MutableList<StockRow>
 )
 
+// Beverage stock data model (with CAFÉ and AG columns)
+data class BeverageRow(
+    val id: String = UUID.randomUUID().toString(),
+    var product: String,
+    var parLevel: String = "",
+    var closingCafe: String = "",
+    var closingAG: String = "",
+    var loading: String = "",
+    var total: String = "",
+    var sales: String = "",
+    var prePurchase: String = "",
+    var waste: String = "",
+    var endDayCafe: String = "",
+    var endDayAG: String = ""
+)
+
+data class BeverageSection(
+    var name: String,
+    val rows: MutableList<BeverageRow>
+)
+
 /* -------------------- MAIN ACTIVITY -------------------- */
 
 class MainActivity : ComponentActivity() {
@@ -75,8 +95,8 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         isDarkMode = isDarkMode,
                         onToggleDarkMode = { isDarkMode = !isDarkMode }
-                    ) { pageName, categories, osm, tm, crew, date ->
-                        exportToPdf(pageName, categories, osm, tm, crew, date)
+                    ) { pageName, categories, beverages, osm, tm, crew, date ->
+                        exportToPdf(pageName, categories, beverages, osm, tm, crew, date)
                     }
                 }
             }
@@ -88,6 +108,7 @@ class MainActivity : ComponentActivity() {
     private fun exportToPdf(
         pageName: String,
         categories: List<CategorySection>,
+        beverages: List<BeverageSection>,
         osm: String,
         tm: String,
         crew: String,
@@ -109,52 +130,56 @@ class MainActivity : ComponentActivity() {
         paint.textSize = 14f
         paint.isFakeBoldText = false
         canvas.drawText("OSM: $osm / TM: $tm / CREW: $crew / DATE: $date", 40f, 80f, paint)
-        canvas.drawText("PREVIOUS DAY", 40f, 100f, paint)
 
-        var y = 140f
+        var y = 120f
 
+        // Food categories
         categories.forEach { category ->
             paint.textSize = 16f
             paint.isFakeBoldText = true
-            paint.color = android.graphics.Color.BLACK
-            canvas.drawRect(40f, y - 15f, 1160f, y + 5f, paint.apply {
-                style = Paint.Style.FILL
-                color = android.graphics.Color.LTGRAY
-            })
-            paint.style = Paint.Style.FILL
-            paint.color = android.graphics.Color.BLACK
             canvas.drawText(category.name, 50f, y, paint)
-            y += 25f
+            y += 20f
 
-            // Column headers
             paint.textSize = 10f
             paint.isFakeBoldText = false
-            canvas.drawText("Product", 50f, y, paint)
-            canvas.drawText("Closing", 280f, y, paint)
-            canvas.drawText("Loading", 350f, y, paint)
-            canvas.drawText("Total", 420f, y, paint)
-            canvas.drawText("Sales", 480f, y, paint)
-            canvas.drawText("Pre-Pur", 540f, y, paint)
-            canvas.drawText("Waste", 610f, y, paint)
-            canvas.drawText("End Day", 670f, y, paint)
-
-            y += 18f
-
             category.rows.forEach { row ->
                 if (y > 1700f) return@forEach
-
-                canvas.drawText(row.product, 50f, y, paint)
-                canvas.drawText(row.closingPrev, 290f, y, paint)
-                canvas.drawText(row.loading, 360f, y, paint)
-                canvas.drawText(row.total, 430f, y, paint)
-                canvas.drawText(row.sales, 490f, y, paint)
-                canvas.drawText(row.prePurchase, 550f, y, paint)
-                canvas.drawText(row.waste, 620f, y, paint)
-                canvas.drawText(row.endDay, 680f, y, paint)
-
+                canvas.drawText(
+                    "${row.product}: C:${row.closingPrev} L:${row.loading} T:${row.total}",
+                    60f,
+                    y,
+                    paint
+                )
                 y += 16f
             }
             y += 15f
+        }
+
+        // Beverage categories
+        paint.textSize = 18f
+        paint.isFakeBoldText = true
+        canvas.drawText("RETAIL STOCK", 50f, y, paint)
+        y += 25f
+
+        beverages.forEach { section ->
+            paint.textSize = 14f
+            paint.isFakeBoldText = true
+            canvas.drawText(section.name, 50f, y, paint)
+            y += 18f
+
+            paint.textSize = 9f
+            paint.isFakeBoldText = false
+            section.rows.forEach { row ->
+                if (y > 1700f) return@forEach
+                canvas.drawText(
+                    "${row.product} (${row.parLevel}): Café:${row.closingCafe} AG:${row.closingAG}",
+                    60f,
+                    y,
+                    paint
+                )
+                y += 14f
+            }
+            y += 12f
         }
 
         pdf.finishPage(page)
@@ -171,7 +196,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendEmail(file: File, pageName: String) {
-
         val subject = "$pageName Stock Sheet - ${
             SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
         }"
@@ -200,14 +224,12 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     isDarkMode: Boolean,
     onToggleDarkMode: () -> Unit,
-    onExportPdf: (String, List<CategorySection>, String, String, String, String) -> Unit
+    onExportPdf: (String, List<CategorySection>, List<BeverageSection>, String, String, String, String) -> Unit
 ) {
-    // Track which screen we're on: null = home, "200" = WLG-AKL, "201" = AKL-WLG
     var selectedTrip by remember { mutableStateOf<String?>(null) }
 
     when (selectedTrip) {
         null -> {
-            // Home screen - trip selection
             TripSelectionScreen(
                 isDarkMode = isDarkMode,
                 onToggleDarkMode = onToggleDarkMode,
@@ -215,8 +237,8 @@ fun MainScreen(
             )
         }
         "200" -> {
-            // WLG to AKL (200) stock sheet
-            val sheet200 = remember { getPage1Categories() }
+            val sheet200 = remember { getFoodCategories() }
+            val beverages200 = remember { getBeverageCategories() }
             var osm by remember { mutableStateOf("") }
             var tm by remember { mutableStateOf("") }
             var crew by remember { mutableStateOf("") }
@@ -226,7 +248,8 @@ fun MainScreen(
             StockSheet(
                 pageName = "WLG-AKL-200",
                 displayTitle = "WLG → AKL (200)",
-                categories = sheet200,
+                foodCategories = sheet200,
+                beverageCategories = beverages200,
                 osm = osm,
                 tm = tm,
                 crew = crew,
@@ -244,8 +267,8 @@ fun MainScreen(
             )
         }
         "201" -> {
-            // AKL to WLG (201) stock sheet
-            val sheet201 = remember { getPage2Categories() }
+            val sheet201 = remember { getFoodCategories() }
+            val beverages201 = remember { getBeverageCategories() }
             var osm by remember { mutableStateOf("") }
             var tm by remember { mutableStateOf("") }
             var crew by remember { mutableStateOf("") }
@@ -255,7 +278,8 @@ fun MainScreen(
             StockSheet(
                 pageName = "AKL-WLG-201",
                 displayTitle = "AKL → WLG (201)",
-                categories = sheet201,
+                foodCategories = sheet201,
+                beverageCategories = beverages201,
                 osm = osm,
                 tm = tm,
                 crew = crew,
@@ -288,7 +312,6 @@ fun TripSelectionScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Dark mode toggle
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
@@ -303,7 +326,6 @@ fun TripSelectionScreen(
 
         Spacer(Modifier.height(40.dp))
 
-        // Title
         Text(
             "Cafe Stock Sheet",
             style = MaterialTheme.typography.headlineLarge,
@@ -320,7 +342,6 @@ fun TripSelectionScreen(
 
         Spacer(Modifier.height(48.dp))
 
-        // Trip buttons
         TripButton(
             title = "WLG → AKL",
             subtitle = "Service 200",
@@ -381,7 +402,8 @@ fun TripButton(
 fun StockSheet(
     pageName: String,
     displayTitle: String,
-    categories: MutableList<CategorySection>,
+    foodCategories: MutableList<CategorySection>,
+    beverageCategories: MutableList<BeverageSection>,
     osm: String,
     tm: String,
     crew: String,
@@ -395,7 +417,7 @@ fun StockSheet(
     clearTrigger: Int,
     onClearAll: () -> Unit,
     onBack: () -> Unit,
-    onExportPdf: (String, List<CategorySection>, String, String, String, String) -> Unit
+    onExportPdf: (String, List<CategorySection>, List<BeverageSection>, String, String, String, String) -> Unit
 ) {
 
     Column(
@@ -405,7 +427,7 @@ fun StockSheet(
             .padding(12.dp)
     ) {
 
-        // Top bar with back button, title and dark mode toggle
+        // Top bar
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -439,7 +461,7 @@ fun StockSheet(
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        // Info fields with placeholders
+        // Info fields
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -458,10 +480,9 @@ fun StockSheet(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-
             Button(
                 onClick = {
-                    categories.forEach { cat ->
+                    foodCategories.forEach { cat ->
                         cat.rows.forEach { row ->
                             row.closingPrev = ""
                             row.loading = ""
@@ -472,6 +493,19 @@ fun StockSheet(
                             row.endDay = ""
                         }
                     }
+                    beverageCategories.forEach { cat ->
+                        cat.rows.forEach { row ->
+                            row.closingCafe = ""
+                            row.closingAG = ""
+                            row.loading = ""
+                            row.total = ""
+                            row.sales = ""
+                            row.prePurchase = ""
+                            row.waste = ""
+                            row.endDayCafe = ""
+                            row.endDayAG = ""
+                        }
+                    }
                     onClearAll()
                 },
                 modifier = Modifier.weight(1f)
@@ -479,7 +513,7 @@ fun StockSheet(
 
             Button(
                 onClick = {
-                    onExportPdf(pageName, categories, osm, tm, crew, date)
+                    onExportPdf(pageName, foodCategories, beverageCategories, osm, tm, crew, date)
                 },
                 modifier = Modifier.weight(1f)
             ) {
@@ -489,11 +523,17 @@ fun StockSheet(
 
         Spacer(Modifier.height(12.dp))
 
-        // Compact Column Headers
+        // FOOD TABLE
+        Text(
+            "FOOD STOCK",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
         CompactTableHeader()
 
-        // Categories and rows
-        categories.forEach { category ->
+        foodCategories.forEach { category ->
             CompactCategoryHeader(category.name)
 
             category.rows.forEachIndexed { index, row ->
@@ -510,6 +550,29 @@ fun StockSheet(
                         )
                     }
                 )
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        HorizontalDivider(thickness = 2.dp, color = MaterialTheme.colorScheme.primary)
+
+        Spacer(Modifier.height(16.dp))
+
+        // BEVERAGE TABLE (SEPARATE WITH CAFÉ/AG)
+        Text(
+            "RETAIL STOCK (CAFÉ & AG)",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        BeverageTableHeader()
+
+        beverageCategories.forEach { section ->
+            BeverageCategoryHeader(section.name)
+            section.rows.forEach { row ->
+                BeverageStockRow(row = row, clearTrigger = clearTrigger)
             }
         }
 
@@ -549,6 +612,8 @@ fun StockSheet(
         )
     }
 }
+
+/* ================= FOOD TABLE COMPONENTS ================= */
 
 @Composable
 fun PlaceholderTextField(
@@ -869,9 +934,218 @@ fun ReadOnlyNumericField(value: String, modifier: Modifier = Modifier) {
     }
 }
 
+/* ================= BEVERAGE TABLE COMPONENTS ================= */
+
+@Composable
+fun BeverageTableHeader() {
+    Column {
+        // First row - main headers
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .border(1.dp, MaterialTheme.colorScheme.outline)
+                .padding(vertical = 6.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("PAR\nLEVEL", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, lineHeight = 8.sp)
+            Text("CLOSING STOCK\nPREVIOUS DAY 201", fontSize = 6.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(1.6f), textAlign = TextAlign.Center, lineHeight = 7.sp)
+            Text("LOADING\n@ WLG", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.9f), textAlign = TextAlign.Center, lineHeight = 8.sp)
+            Text("TOTAL", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+            Text("SALES FOR\nTHE DAY", fontSize = 6.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.9f), textAlign = TextAlign.Center, lineHeight = 7.sp)
+            Text("PRE\nPURCHASE", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, lineHeight = 8.sp)
+            Text("WASTE\n@ AKL", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, lineHeight = 8.sp)
+            Text("END OF DAY\nTOTAL", fontSize = 6.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(1.6f), textAlign = TextAlign.Center, lineHeight = 7.sp)
+        }
+
+        // Second row - CAFÉ / AG labels
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .border(1.dp, MaterialTheme.colorScheme.outline)
+                .padding(vertical = 4.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Spacer(Modifier.weight(0.8f)) // PAR LEVEL
+            Text("CAFÉ", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+            Text("AG", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+            Spacer(Modifier.weight(0.9f)) // LOADING
+            Spacer(Modifier.weight(0.8f)) // TOTAL
+            Spacer(Modifier.weight(0.9f)) // SALES
+            Spacer(Modifier.weight(0.8f)) // PRE PURCHASE
+            Spacer(Modifier.weight(0.8f)) // WASTE
+            Text("CAFÉ", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+            Text("AG", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+        }
+    }
+}
+
+@Composable
+fun BeverageCategoryHeader(name: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black)
+            .border(1.dp, MaterialTheme.colorScheme.outline)
+            .padding(8.dp)
+    ) {
+        Text(
+            name,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 11.sp,
+            color = Color.White
+        )
+    }
+}
+
+@Composable
+fun BeverageStockRow(
+    row: BeverageRow,
+    clearTrigger: Int
+) {
+    var closingCafe by remember(clearTrigger) { mutableStateOf(row.closingCafe) }
+    var closingAG by remember(clearTrigger) { mutableStateOf(row.closingAG) }
+    var loading by remember(clearTrigger) { mutableStateOf(row.loading) }
+
+    val calculatedTotal by remember {
+        derivedStateOf {
+            val cafe = closingCafe.toIntOrNull() ?: 0
+            val ag = closingAG.toIntOrNull() ?: 0
+            val load = loading.toIntOrNull() ?: 0
+            val total = cafe + ag + load
+            if (total > 0) total.toString() else ""
+        }
+    }
+
+    row.total = calculatedTotal
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .border(0.5.dp, MaterialTheme.colorScheme.outline)
+            .padding(vertical = 3.dp, horizontal = 4.dp)
+    ) {
+        // Product name and PAR
+        Column(Modifier.weight(0.8f)) {
+            Text(row.product, fontSize = 9.sp, lineHeight = 10.sp)
+            Text(row.parLevel, fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        // Closing - CAFÉ
+        TinyNumericField(closingCafe, Modifier.weight(0.8f), clearTrigger) {
+            closingCafe = it
+            row.closingCafe = it
+        }
+        // Closing - AG
+        TinyNumericField(closingAG, Modifier.weight(0.8f), clearTrigger) {
+            closingAG = it
+            row.closingAG = it
+        }
+
+        // Loading
+        TinyNumericField(loading, Modifier.weight(0.9f), clearTrigger) {
+            loading = it
+            row.loading = it
+        }
+
+        // Total (calculated)
+        ReadOnlyTinyField(calculatedTotal, Modifier.weight(0.8f))
+
+        // Sales
+        TinyNumericField(row.sales, Modifier.weight(0.9f), clearTrigger) { row.sales = it }
+
+        // Pre Purchase
+        TinyNumericField(row.prePurchase, Modifier.weight(0.8f), clearTrigger) { row.prePurchase = it }
+
+        // Waste
+        TinyNumericField(row.waste, Modifier.weight(0.8f), clearTrigger) { row.waste = it }
+
+        // End Day - CAFÉ
+        TinyNumericField(row.endDayCafe, Modifier.weight(0.8f), clearTrigger) { row.endDayCafe = it }
+        // End Day - AG
+        TinyNumericField(row.endDayAG, Modifier.weight(0.8f), clearTrigger) { row.endDayAG = it }
+    }
+}
+
+@Composable
+fun TinyNumericField(
+    value: String,
+    modifier: Modifier = Modifier,
+    clearTrigger: Int = 0,
+    onChange: (String) -> Unit
+) {
+    var textValue by remember(value, clearTrigger) { mutableStateOf(value) }
+
+    BasicTextField(
+        value = textValue,
+        onValueChange = { newValue ->
+            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
+                textValue = newValue
+                onChange(newValue)
+            }
+        },
+        modifier = modifier
+            .padding(horizontal = 1.dp)
+            .height(32.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(0.5.dp, MaterialTheme.colorScheme.outline),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        textStyle = LocalTextStyle.current.copy(
+            fontSize = 9.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface
+        ),
+        decorationBox = { innerTextField ->
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                innerTextField()
+            }
+        }
+    )
+}
+
+@Composable
+fun ReadOnlyTinyField(value: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .padding(horizontal = 1.dp)
+            .height(32.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(0.5.dp, MaterialTheme.colorScheme.outline),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = value,
+            fontSize = 9.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+        )
+    }
+}
+
 /* ================= DATA INITIALIZATION ================= */
 
-fun getPage1Categories(): MutableList<CategorySection> {
+fun getFoodCategories(): MutableList<CategorySection> {
     return mutableListOf(
         CategorySection("BREAKFAST", mutableListOf(
             StockRow(product = "Growers Breakfast"),
@@ -923,55 +1197,56 @@ fun getPage1Categories(): MutableList<CategorySection> {
     )
 }
 
-// Page 2 categories (201 - different products for the return trip)
-fun getPage2Categories(): MutableList<CategorySection> {
+fun getBeverageCategories(): MutableList<BeverageSection> {
     return mutableListOf(
-        CategorySection("BREAKFAST", mutableListOf(
-            StockRow(product = "Growers Breakfast"),
-            StockRow(product = "Breakfast Croissant"),
-            StockRow(product = "Big Breakfast"),
-            StockRow(product = "Pancakes"),
-            StockRow(product = "Chia Seeds"),
-            StockRow(product = "Fruit Salads")
+        BeverageSection("SNACKS", mutableListOf(
+            BeverageRow(product = "Whittakers White Choc", parLevel = "48"),
+            BeverageRow(product = "Whittakers Brown Choc", parLevel = "48"),
+            BeverageRow(product = "ETA Nuts", parLevel = "24")
         )),
-        CategorySection("SWEETS", mutableListOf(
-            StockRow(product = "Brownie Slices"),
-            StockRow(product = "Cookie Time Biscuits"),
-            StockRow(product = "Cookie Time GF Biscuits"),
-            StockRow(product = "Carrot Cake"),
-            StockRow(product = "ANZAC Biscuits"),
-            StockRow(product = "Blueberry Muffins"),
-            StockRow(product = "Cheese Scones")
+        BeverageSection("PROPER CHIPS", mutableListOf(
+            BeverageRow(product = "Sea Salt", parLevel = "18"),
+            BeverageRow(product = "Cider Vinegar", parLevel = "18"),
+            BeverageRow(product = "Garden Medly", parLevel = "18")
         )),
-        CategorySection("SALADS", mutableListOf(
-            StockRow(product = "Leafy Salad"),
-            StockRow(product = "Smoked Chicken Pasta Salad")
+        BeverageSection("BEERS", mutableListOf(
+            BeverageRow(product = "Steinlager Ultra", parLevel = "24"),
+            BeverageRow(product = "Duncans Pilsner", parLevel = "12"),
+            BeverageRow(product = "Ruapehu Stout", parLevel = "12"),
+            BeverageRow(product = "Parrot dog Hazy IPA", parLevel = "12"),
+            BeverageRow(product = "Garage Project TINY", parLevel = "12"),
+            BeverageRow(product = "Panhead Supercharger", parLevel = "12"),
+            BeverageRow(product = "Sawmill Nimble", parLevel = "12")
         )),
-        CategorySection("SANDWICHES AND WRAP", mutableListOf(
-            StockRow(product = "BLT"),
-            StockRow(product = "Chicken Wrap"),
-            StockRow(product = "Beef Pickle"),
-            StockRow(product = "Ham and Cheese Toastie")
+        BeverageSection("PRE MIXES", mutableListOf(
+            BeverageRow(product = "Pals Vodka", parLevel = "10"),
+            BeverageRow(product = "Scapegrace Gin", parLevel = "12"),
+            BeverageRow(product = "Coruba Rum & Cola", parLevel = "12"),
+            BeverageRow(product = "Apple Cider", parLevel = "12"),
+            BeverageRow(product = "AF Apero Spirtz", parLevel = "12")
         )),
-        CategorySection("HOT MEALS", mutableListOf(
-            StockRow(product = "Mac & Cheese"),
-            StockRow(product = "Lasagne"),
-            StockRow(product = "Roast Chicken"),
-            StockRow(product = "Lamb Shank"),
-            StockRow(product = "Beef Cheek")
+        BeverageSection("WINES", mutableListOf(
+            BeverageRow(product = "Joiy the Gryphon 250ml", parLevel = "24"),
+            BeverageRow(product = "The Ned Sav 250ml", parLevel = "24"),
+            BeverageRow(product = "Matahiwi Cuvee 250ml", parLevel = "24"),
+            BeverageRow(product = "Summer Love 250ml", parLevel = "24")
         )),
-        CategorySection("PIES", mutableListOf(
-            StockRow(product = "Steak and Cheese"),
-            StockRow(product = "Vegetarian")
+        BeverageSection("SOFT DRINKS", mutableListOf(
+            BeverageRow(product = "H2go Water 750ml", parLevel = "12"),
+            BeverageRow(product = "NZ SP Water 500ml", parLevel = "18"),
+            BeverageRow(product = "Bundaberg Lemon Lime", parLevel = "10"),
+            BeverageRow(product = "Bundaberg Ginger Beer", parLevel = "10"),
+            BeverageRow(product = "7 UP", parLevel = "10"),
+            BeverageRow(product = "Pepsi", parLevel = "10"),
+            BeverageRow(product = "Pepsi Max", parLevel = "10"),
+            BeverageRow(product = "McCoy Orange Juice", parLevel = "15"),
+            BeverageRow(product = "Boss Coffee", parLevel = "6")
         )),
-        CategorySection("SWEET AND ICE CREAM", mutableListOf(
-            StockRow(product = "KAPITI BOYSENBERRY"),
-            StockRow(product = "KAPITI PASSIONFRUIT"),
-            StockRow(product = "KAPITI CHOCOLATE CUPS"),
-            StockRow(product = "MEMPHIS BIK BIKKIE")
-        )),
-        CategorySection("CHEESEBOARD", mutableListOf(
-            StockRow(product = "Cheeseboard")
+        BeverageSection("750 ML WINE", mutableListOf(
+            BeverageRow(product = "Hunters 750ml", parLevel = "6"),
+            BeverageRow(product = "Kumeru Pinot Gris 750ml", parLevel = "6"),
+            BeverageRow(product = "Dog Point Sav 750ml", parLevel = "6"),
+            BeverageRow(product = "Clearview Chardonnay 750ml", parLevel = "6")
         ))
     )
 }
