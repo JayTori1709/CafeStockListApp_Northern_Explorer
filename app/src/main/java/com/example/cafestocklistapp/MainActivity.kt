@@ -14,21 +14,22 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -39,6 +40,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
+
+/* ==================== KIWIRAIL BRANDING COLORS ==================== */
+private val KiwiRailOrange = Color(0xFFFF6600)
+private val KiwiRailBlack = Color(0xFF1A1A1A)
+private val KiwiRailWhite = Color(0xFFFFFFFF)
+private val KiwiRailLightGray = Color(0xFFF5F5F5)
+private val KiwiRailDarkGray = Color(0xFF4A4A4A)
 
 /* -------------------- DATA MODELS -------------------- */
 
@@ -91,7 +99,7 @@ class MainActivity : ComponentActivity() {
             var isDarkMode by remember { mutableStateOf(false) }
 
             CafeStockListAppTheme(darkTheme = isDarkMode) {
-                Surface(color = MaterialTheme.colorScheme.background) {
+                Surface(color = KiwiRailLightGray) {
                     MainScreen(
                         isDarkMode = isDarkMode,
                         onToggleDarkMode = { isDarkMode = !isDarkMode }
@@ -248,6 +256,7 @@ fun MainScreen(
             StockSheet(
                 pageName = "WLG-AKL-200",
                 displayTitle = "WLG → AKL (200)",
+                serviceNumber = "200",
                 foodCategories = sheet200,
                 beverageCategories = beverages200,
                 osm = osm,
@@ -278,6 +287,7 @@ fun MainScreen(
             StockSheet(
                 pageName = "AKL-WLG-201",
                 displayTitle = "AKL → WLG (201)",
+                serviceNumber = "201",
                 foodCategories = sheet201,
                 beverageCategories = beverages201,
                 osm = osm,
@@ -305,56 +315,90 @@ fun TripSelectionScreen(
     onToggleDarkMode: () -> Unit,
     onTripSelected: (String) -> Unit
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .background(if (isDarkMode) KiwiRailBlack else KiwiRailLightGray)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            IconButton(onClick = onToggleDarkMode) {
-                Icon(
-                    imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                    contentDescription = "Toggle Dark Mode"
+            // KiwiRail Logo
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(KiwiRailOrange),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "KR",
+                    fontSize = 40.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = KiwiRailWhite
                 )
             }
+
+            Spacer(Modifier.height(32.dp))
+
+            Text(
+                "KiwiRail Cafe",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+            )
+
+            Text(
+                "Stock Management",
+                fontSize = 16.sp,
+                color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Text(
+                "Select Your Service",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = KiwiRailOrange
+            )
+
+            Spacer(Modifier.height(40.dp))
+
+            TripButton(
+                title = "WLG → AKL",
+                subtitle = "Service 200",
+                isDarkMode = isDarkMode,
+                onClick = { onTripSelected("200") }
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            TripButton(
+                title = "AKL → WLG",
+                subtitle = "Service 201",
+                isDarkMode = isDarkMode,
+                onClick = { onTripSelected("201") }
+            )
         }
 
-        Spacer(Modifier.height(40.dp))
-
-        Text(
-            "Cafe Stock Sheet",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        Text(
-            "What trip are we doing today?",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(Modifier.height(48.dp))
-
-        TripButton(
-            title = "WLG → AKL",
-            subtitle = "Service 200",
-            onClick = { onTripSelected("200") }
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        TripButton(
-            title = "AKL → WLG",
-            subtitle = "Service 201",
-            onClick = { onTripSelected("201") }
-        )
+        // Dark mode toggle
+        IconButton(
+            onClick = onToggleDarkMode,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+        ) {
+            Icon(
+                imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                contentDescription = "Toggle Dark Mode",
+                tint = KiwiRailOrange
+            )
+        }
     }
 }
 
@@ -362,37 +406,57 @@ fun TripSelectionScreen(
 fun TripButton(
     title: String,
     subtitle: String,
+    isDarkMode: Boolean,
     onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp)
+            .height(100.dp)
+            .shadow(8.dp, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-            )
+            Column {
+                Text(
+                    title,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    subtitle,
+                    fontSize = 14.sp,
+                    color = KiwiRailOrange,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(KiwiRailOrange),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "→",
+                    fontSize = 32.sp,
+                    color = KiwiRailWhite,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -402,6 +466,7 @@ fun TripButton(
 fun StockSheet(
     pageName: String,
     displayTitle: String,
+    serviceNumber: String, // "200" or "201"
     foodCategories: MutableList<CategorySection>,
     beverageCategories: MutableList<BeverageSection>,
     osm: String,
@@ -508,16 +573,32 @@ fun StockSheet(
                     }
                     onClearAll()
                 },
-                modifier = Modifier.weight(1f)
-            ) { Text("Clear All", fontSize = 12.sp) }
+                modifier = Modifier.weight(1f).height(56.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite,
+                    contentColor = KiwiRailOrange
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Delete, null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Clear All", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
 
             Button(
                 onClick = {
                     onExportPdf(pageName, foodCategories, beverageCategories, osm, tm, crew, date)
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).height(56.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = KiwiRailOrange,
+                    contentColor = KiwiRailWhite
+                ),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Text("Export PDF", fontSize = 12.sp)
+                Icon(Icons.Default.Share, null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Export PDF", fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -540,6 +621,7 @@ fun StockSheet(
                 DraggableStockRow(
                     row = row,
                     clearTrigger = clearTrigger,
+                    isDarkMode = isDarkMode,
                     onMoveUp = {
                         if (index > 0) category.rows.swap(index, index - 1)
                     },
@@ -567,12 +649,12 @@ fun StockSheet(
             modifier = Modifier.padding(vertical = 8.dp)
         )
 
-        BeverageTableHeader()
+        BeverageTableHeader(serviceNumber = serviceNumber)
 
         beverageCategories.forEach { section ->
             BeverageCategoryHeader(section.name)
             section.rows.forEach { row ->
-                BeverageStockRow(row = row, clearTrigger = clearTrigger)
+                BeverageStockRow(row = row, clearTrigger = clearTrigger, isDarkMode = isDarkMode)
             }
         }
 
@@ -716,63 +798,70 @@ fun CompactTableHeader() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.primaryContainer)
-            .border(1.dp, MaterialTheme.colorScheme.outline)
-            .padding(vertical = 8.dp, horizontal = 6.dp),
+            .background(KiwiRailOrange, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+            .padding(vertical = 10.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             "Product",
-            fontSize = 9.sp,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite,
             modifier = Modifier.weight(2.8f)
         )
         Text(
             "Close",
-            fontSize = 8.sp,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite,
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center
         )
         Text(
             "Load",
-            fontSize = 8.sp,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite,
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center
         )
         Text(
             "Total",
-            fontSize = 8.sp,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite,
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center
         )
         Text(
             "Sales",
-            fontSize = 8.sp,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite,
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center
         )
         Text(
             "Pre",
-            fontSize = 8.sp,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite,
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center
         )
         Text(
             "Waste",
-            fontSize = 8.sp,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite,
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center
         )
         Text(
             "End",
-            fontSize = 8.sp,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite,
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center
         )
@@ -784,15 +873,14 @@ fun CompactCategoryHeader(name: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            .border(1.dp, MaterialTheme.colorScheme.outline)
-            .padding(8.dp)
+            .background(KiwiRailBlack)
+            .padding(10.dp)
     ) {
         Text(
             name,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-            fontSize = 12.sp
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite
         )
     }
 }
@@ -801,6 +889,7 @@ fun CompactCategoryHeader(name: String) {
 fun DraggableStockRow(
     row: StockRow,
     clearTrigger: Int,
+    isDarkMode: Boolean,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit
 ) {
@@ -829,10 +918,10 @@ fun DraggableStockRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                if (isDragging) MaterialTheme.colorScheme.surfaceVariant
-                else MaterialTheme.colorScheme.surface
+                if (isDragging) KiwiRailOrange.copy(alpha = 0.15f)
+                else if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
             )
-            .border(0.5.dp, MaterialTheme.colorScheme.outline)
+            .border(0.5.dp, if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f) else Color.LightGray)
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { isDragging = true },
@@ -853,23 +942,24 @@ fun DraggableStockRow(
         Text(
             row.product,
             fontSize = 10.sp,
-            modifier = Modifier.weight(2.8f)
+            modifier = Modifier.weight(2.8f),
+            color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
         )
 
-        CompactNumericField(closeValue, Modifier.weight(1f), clearTrigger) {
+        CompactNumericField(closeValue, Modifier.weight(1f), clearTrigger, isDarkMode) {
             closeValue = it
             row.closingPrev = it
         }
-        CompactNumericField(loadValue, Modifier.weight(1f), clearTrigger) {
+        CompactNumericField(loadValue, Modifier.weight(1f), clearTrigger, isDarkMode) {
             loadValue = it
             row.loading = it
         }
 
         ReadOnlyNumericField(calculatedTotal, Modifier.weight(1f))
 
-        CompactNumericField(row.sales, Modifier.weight(1f), clearTrigger) { row.sales = it }
-        CompactNumericField(row.prePurchase, Modifier.weight(1f), clearTrigger) { row.prePurchase = it }
-        CompactNumericField(row.waste, Modifier.weight(1f), clearTrigger) { row.waste = it }
+        CompactNumericField(row.sales, Modifier.weight(1f), clearTrigger, isDarkMode) { row.sales = it }
+        CompactNumericField(row.prePurchase, Modifier.weight(1f), clearTrigger, isDarkMode) { row.prePurchase = it }
+        CompactNumericField(row.waste, Modifier.weight(1f), clearTrigger, isDarkMode) { row.waste = it }
         CompactNumericField(row.endDay, Modifier.weight(1f), clearTrigger) { row.endDay = it }
     }
 }
@@ -879,6 +969,7 @@ fun CompactNumericField(
     value: String,
     modifier: Modifier = Modifier,
     clearTrigger: Int = 0,
+    isDarkMode: Boolean = false,
     onChange: (String) -> Unit
 ) {
     var textValue by remember(value, clearTrigger) { mutableStateOf(value) }
@@ -894,14 +985,21 @@ fun CompactNumericField(
         modifier = modifier
             .padding(horizontal = 2.dp)
             .height(38.dp)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(0.5.dp, MaterialTheme.colorScheme.outline),
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (isDarkMode) KiwiRailBlack else KiwiRailLightGray)
+            .border(
+                1.dp,
+                if (textValue.isNotEmpty()) KiwiRailOrange.copy(alpha = 0.5f)
+                else if (isDarkMode) KiwiRailDarkGray else Color.LightGray,
+                RoundedCornerShape(6.dp)
+            ),
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         textStyle = LocalTextStyle.current.copy(
             fontSize = 11.sp,
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface
+            color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack,
+            fontWeight = if (textValue.isNotEmpty()) FontWeight.Bold else FontWeight.Normal
         ),
         decorationBox = { innerTextField ->
             Box(
@@ -920,16 +1018,17 @@ fun ReadOnlyNumericField(value: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .padding(horizontal = 2.dp)
             .height(38.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .border(0.5.dp, MaterialTheme.colorScheme.outline),
+            .clip(RoundedCornerShape(6.dp))
+            .background(KiwiRailOrange.copy(alpha = 0.15f))
+            .border(1.dp, KiwiRailOrange.copy(alpha = 0.5f), RoundedCornerShape(6.dp)),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = value,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            color = KiwiRailOrange,
+            fontWeight = FontWeight.Bold
         )
     }
 }
@@ -937,58 +1036,63 @@ fun ReadOnlyNumericField(value: String, modifier: Modifier = Modifier) {
 /* ================= BEVERAGE TABLE COMPONENTS ================= */
 
 @Composable
-fun BeverageTableHeader() {
+fun BeverageTableHeader(
+    serviceNumber: String // "200" or "201"
+) {
+    // Determine text based on service
+    val closingDay = if (serviceNumber == "200") "201" else "200"
+    val loadingLocation = if (serviceNumber == "200") "WLG" else "AKL"
+    val wasteLocation = if (serviceNumber == "200") "AKL" else "WLG"
+
     Column {
         // First row - main headers
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .border(1.dp, MaterialTheme.colorScheme.outline)
-                .padding(vertical = 6.dp, horizontal = 4.dp),
+                .background(KiwiRailOrange, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                .padding(vertical = 8.dp, horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("PAR\nLEVEL", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, lineHeight = 8.sp)
-            Text("CLOSING STOCK\nPREVIOUS DAY 201", fontSize = 6.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(1.6f), textAlign = TextAlign.Center, lineHeight = 7.sp)
-            Text("LOADING\n@ WLG", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.9f), textAlign = TextAlign.Center, lineHeight = 8.sp)
-            Text("TOTAL", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
-            Text("SALES FOR\nTHE DAY", fontSize = 6.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.9f), textAlign = TextAlign.Center, lineHeight = 7.sp)
-            Text("PRE\nPURCHASE", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, lineHeight = 8.sp)
-            Text("WASTE\n@ AKL", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, lineHeight = 8.sp)
-            Text("END OF DAY\nTOTAL", fontSize = 6.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(1.6f), textAlign = TextAlign.Center, lineHeight = 7.sp)
+            Text("PAR\nLEVEL", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, lineHeight = 9.sp, color = KiwiRailWhite)
+            Text("CLOSING STOCK\nPREVIOUS DAY $closingDay", fontSize = 7.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1.6f), textAlign = TextAlign.Center, lineHeight = 8.sp, color = KiwiRailWhite)
+            Text("LOADING\n@ $loadingLocation", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.9f), textAlign = TextAlign.Center, lineHeight = 9.sp, color = KiwiRailWhite)
+            Text("TOTAL", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, color = KiwiRailWhite)
+            Text("SALES FOR\nTHE DAY", fontSize = 7.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.9f), textAlign = TextAlign.Center, lineHeight = 8.sp, color = KiwiRailWhite)
+            Text("PRE\nPURCHASE", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, lineHeight = 9.sp, color = KiwiRailWhite)
+            Text("WASTE\n@ $wasteLocation", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, lineHeight = 9.sp, color = KiwiRailWhite)
+            Text("END OF DAY\nTOTAL", fontSize = 7.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1.6f), textAlign = TextAlign.Center, lineHeight = 8.sp, color = KiwiRailWhite)
         }
 
         // Second row - CAFÉ / AG labels
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .border(1.dp, MaterialTheme.colorScheme.outline)
-                .padding(vertical = 4.dp, horizontal = 4.dp),
+                .background(KiwiRailOrange.copy(alpha = 0.9f))
+                .padding(vertical = 6.dp, horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Spacer(Modifier.weight(0.8f)) // PAR LEVEL
-            Text("CAFÉ", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
-            Text("AG", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+            Text("CAFÉ", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, color = KiwiRailWhite)
+            Text("AG", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, color = KiwiRailWhite)
             Spacer(Modifier.weight(0.9f)) // LOADING
             Spacer(Modifier.weight(0.8f)) // TOTAL
             Spacer(Modifier.weight(0.9f)) // SALES
             Spacer(Modifier.weight(0.8f)) // PRE PURCHASE
             Spacer(Modifier.weight(0.8f)) // WASTE
-            Text("CAFÉ", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
-            Text("AG", fontSize = 7.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+            Text("CAFÉ", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, color = KiwiRailWhite)
+            Text("AG", fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center, color = KiwiRailWhite)
         }
     }
 }
@@ -998,16 +1102,14 @@ fun BeverageCategoryHeader(name: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.Black)
-            .border(1.dp, MaterialTheme.colorScheme.outline)
-            .padding(8.dp)
+            .background(KiwiRailBlack)
+            .padding(10.dp)
     ) {
         Text(
             name,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-            fontSize = 11.sp,
-            color = Color.White
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = KiwiRailWhite
         )
     }
 }
@@ -1015,7 +1117,8 @@ fun BeverageCategoryHeader(name: String) {
 @Composable
 fun BeverageStockRow(
     row: BeverageRow,
-    clearTrigger: Int
+    clearTrigger: Int,
+    isDarkMode: Boolean
 ) {
     var closingCafe by remember(clearTrigger) { mutableStateOf(row.closingCafe) }
     var closingAG by remember(clearTrigger) { mutableStateOf(row.closingAG) }
@@ -1037,29 +1140,29 @@ fun BeverageStockRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .border(0.5.dp, MaterialTheme.colorScheme.outline)
+            .background(if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite)
+            .border(0.5.dp, if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f) else Color.LightGray)
             .padding(vertical = 3.dp, horizontal = 4.dp)
     ) {
         // Product name and PAR
         Column(Modifier.weight(0.8f)) {
-            Text(row.product, fontSize = 9.sp, lineHeight = 10.sp)
-            Text(row.parLevel, fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(row.product, fontSize = 9.sp, lineHeight = 10.sp, color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack)
+            Text(row.parLevel, fontSize = 8.sp, color = KiwiRailOrange, fontWeight = FontWeight.Bold)
         }
 
         // Closing - CAFÉ
-        TinyNumericField(closingCafe, Modifier.weight(0.8f), clearTrigger) {
+        TinyNumericField(closingCafe, Modifier.weight(0.8f), clearTrigger, isDarkMode) {
             closingCafe = it
             row.closingCafe = it
         }
         // Closing - AG
-        TinyNumericField(closingAG, Modifier.weight(0.8f), clearTrigger) {
+        TinyNumericField(closingAG, Modifier.weight(0.8f), clearTrigger, isDarkMode) {
             closingAG = it
             row.closingAG = it
         }
 
         // Loading
-        TinyNumericField(loading, Modifier.weight(0.9f), clearTrigger) {
+        TinyNumericField(loading, Modifier.weight(0.9f), clearTrigger, isDarkMode) {
             loading = it
             row.loading = it
         }
@@ -1068,18 +1171,18 @@ fun BeverageStockRow(
         ReadOnlyTinyField(calculatedTotal, Modifier.weight(0.8f))
 
         // Sales
-        TinyNumericField(row.sales, Modifier.weight(0.9f), clearTrigger) { row.sales = it }
+        TinyNumericField(row.sales, Modifier.weight(0.9f), clearTrigger, isDarkMode) { row.sales = it }
 
         // Pre Purchase
-        TinyNumericField(row.prePurchase, Modifier.weight(0.8f), clearTrigger) { row.prePurchase = it }
+        TinyNumericField(row.prePurchase, Modifier.weight(0.8f), clearTrigger, isDarkMode) { row.prePurchase = it }
 
         // Waste
-        TinyNumericField(row.waste, Modifier.weight(0.8f), clearTrigger) { row.waste = it }
+        TinyNumericField(row.waste, Modifier.weight(0.8f), clearTrigger, isDarkMode) { row.waste = it }
 
         // End Day - CAFÉ
-        TinyNumericField(row.endDayCafe, Modifier.weight(0.8f), clearTrigger) { row.endDayCafe = it }
+        TinyNumericField(row.endDayCafe, Modifier.weight(0.8f), clearTrigger, isDarkMode) { row.endDayCafe = it }
         // End Day - AG
-        TinyNumericField(row.endDayAG, Modifier.weight(0.8f), clearTrigger) { row.endDayAG = it }
+        TinyNumericField(row.endDayAG, Modifier.weight(0.8f), clearTrigger, isDarkMode) { row.endDayAG = it }
     }
 }
 
@@ -1088,6 +1191,7 @@ fun TinyNumericField(
     value: String,
     modifier: Modifier = Modifier,
     clearTrigger: Int = 0,
+    isDarkMode: Boolean = false,
     onChange: (String) -> Unit
 ) {
     var textValue by remember(value, clearTrigger) { mutableStateOf(value) }
@@ -1103,14 +1207,21 @@ fun TinyNumericField(
         modifier = modifier
             .padding(horizontal = 1.dp)
             .height(32.dp)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(0.5.dp, MaterialTheme.colorScheme.outline),
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (isDarkMode) KiwiRailBlack else KiwiRailLightGray)
+            .border(
+                1.dp,
+                if (textValue.isNotEmpty()) KiwiRailOrange.copy(alpha = 0.5f)
+                else if (isDarkMode) KiwiRailDarkGray else Color.LightGray,
+                RoundedCornerShape(4.dp)
+            ),
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         textStyle = LocalTextStyle.current.copy(
-            fontSize = 9.sp,
+            fontSize = 10.sp,
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface
+            color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack,
+            fontWeight = if (textValue.isNotEmpty()) FontWeight.Bold else FontWeight.Normal
         ),
         decorationBox = { innerTextField ->
             Box(
@@ -1129,16 +1240,17 @@ fun ReadOnlyTinyField(value: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .padding(horizontal = 1.dp)
             .height(32.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .border(0.5.dp, MaterialTheme.colorScheme.outline),
+            .clip(RoundedCornerShape(4.dp))
+            .background(KiwiRailOrange.copy(alpha = 0.15f))
+            .border(1.dp, KiwiRailOrange.copy(alpha = 0.5f), RoundedCornerShape(4.dp)),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = value,
-            fontSize = 9.sp,
+            fontSize = 10.sp,
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            color = KiwiRailOrange,
+            fontWeight = FontWeight.Bold
         )
     }
 }
