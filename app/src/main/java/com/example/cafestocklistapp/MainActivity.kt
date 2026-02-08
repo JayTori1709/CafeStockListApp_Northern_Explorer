@@ -1,6 +1,7 @@
 package com.example.cafestocklistapp
 
 import android.app.DatePickerDialog
+import android.content.Context
 import android.content.Intent
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
@@ -224,6 +225,12 @@ fun MainScreen(
 ) {
     var selectedTrip by remember { mutableStateOf<String?>(null) }
 
+    // Shared data between services
+    val sheet200 = remember { getFoodCategories() }
+    val beverages200 = remember { getBeverageCategories() }
+    val sheet201 = remember { getFoodCategories() }
+    val beverages201 = remember { getBeverageCategories() }
+
     when (selectedTrip) {
         null -> {
             TripSelectionScreen(
@@ -233,8 +240,6 @@ fun MainScreen(
             )
         }
         "200" -> {
-            val sheet200 = remember { getFoodCategories() }
-            val beverages200 = remember { getBeverageCategories() }
             var osm by remember { mutableStateOf("") }
             var tm by remember { mutableStateOf("") }
             var crew by remember { mutableStateOf("") }
@@ -262,12 +267,28 @@ fun MainScreen(
                 clearTrigger = clearTrigger,
                 onClearAll = { clearTrigger++ },
                 onBack = { selectedTrip = null },
-                onExportPdf = onExportPdf
+                onExportPdf = onExportPdf,
+                onTransferTotals = {
+                    // Transfer Service 200 END totals to Service 201 CLOSING PREV
+                    sheet200.forEachIndexed { catIndex, category ->
+                        category.rows.forEachIndexed { rowIndex, row ->
+                            if (row.endDay.isNotEmpty()) {
+                                sheet201[catIndex].rows[rowIndex].closingPrev = row.endDay
+                            }
+                        }
+                    }
+                    beverages200.forEachIndexed { catIndex, category ->
+                        category.rows.forEachIndexed { rowIndex, row ->
+                            if (row.endDayCafe.isNotEmpty() || row.endDayAG.isNotEmpty()) {
+                                beverages201[catIndex].rows[rowIndex].closingCafe = row.endDayCafe
+                                beverages201[catIndex].rows[rowIndex].closingAG = row.endDayAG
+                            }
+                        }
+                    }
+                }
             )
         }
         "201" -> {
-            val sheet201 = remember { getFoodCategories() }
-            val beverages201 = remember { getBeverageCategories() }
             var osm by remember { mutableStateOf("") }
             var tm by remember { mutableStateOf("") }
             var crew by remember { mutableStateOf("") }
@@ -295,7 +316,25 @@ fun MainScreen(
                 clearTrigger = clearTrigger,
                 onClearAll = { clearTrigger++ },
                 onBack = { selectedTrip = null },
-                onExportPdf = onExportPdf
+                onExportPdf = onExportPdf,
+                onTransferTotals = {
+                    // Transfer Service 201 END totals to Service 200 CLOSING PREV
+                    sheet201.forEachIndexed { catIndex, category ->
+                        category.rows.forEachIndexed { rowIndex, row ->
+                            if (row.endDay.isNotEmpty()) {
+                                sheet200[catIndex].rows[rowIndex].closingPrev = row.endDay
+                            }
+                        }
+                    }
+                    beverages201.forEachIndexed { catIndex, category ->
+                        category.rows.forEachIndexed { rowIndex, row ->
+                            if (row.endDayCafe.isNotEmpty() || row.endDayAG.isNotEmpty()) {
+                                beverages200[catIndex].rows[rowIndex].closingCafe = row.endDayCafe
+                                beverages200[catIndex].rows[rowIndex].closingAG = row.endDayAG
+                            }
+                        }
+                    }
+                }
             )
         }
     }
@@ -472,7 +511,8 @@ fun StockSheet(
     clearTrigger: Int,
     onClearAll: () -> Unit,
     onBack: () -> Unit,
-    onExportPdf: (String, List<CategorySection>, List<BeverageSection>, String, String, String, String) -> Unit
+    onExportPdf: (String, List<CategorySection>, List<BeverageSection>, String, String, String, String) -> Unit,
+    onTransferTotals: () -> Unit
 ) {
     // Calculate statistics
     val foodItemsCount = foodCategories.sumOf { category -> category.rows.count { row -> row.endDay.isNotEmpty() } }
@@ -732,6 +772,120 @@ fun StockSheet(
                     }
                 }
             }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Transfer End Totals Button
+        var showTransferDialog by remember { mutableStateOf(false) }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
+            ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "Ready to move to next service?",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    "Transfer end-of-day totals to ${if (serviceNumber == "200") "Service 201" else "Service 200"}'s opening stock",
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Button(
+                    onClick = { showTransferDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = KiwiRailOrange,
+                        contentColor = KiwiRailWhite
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ArrowForward,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Transfer End Totals to ${if (serviceNumber == "200") "201" else "200"}",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // Confirmation Dialog
+        if (showTransferDialog) {
+            AlertDialog(
+                onDismissRequest = { showTransferDialog = false },
+                title = {
+                    Text(
+                        "Transfer End Totals?",
+                        fontWeight = FontWeight.Bold,
+                        color = KiwiRailOrange
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            "This will copy:",
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("• Food END values → Service ${if (serviceNumber == "200") "201" else "200"} CLOSING PREV")
+                        Text("• Beverage END CAFÉ/AG values → Service ${if (serviceNumber == "200") "201" else "200"} CLOSING STOCK")
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Make sure you've completed Service $serviceNumber before transferring!",
+                            fontSize = 12.sp,
+                            color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            onTransferTotals()
+                            showTransferDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = KiwiRailOrange
+                        )
+                    ) {
+                        Text("Transfer Now")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showTransferDialog = false }) {
+                        Text("Cancel", color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack)
+                    }
+                },
+                containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite,
+                shape = RoundedCornerShape(16.dp)
+            )
         }
 
         Spacer(Modifier.height(24.dp))
