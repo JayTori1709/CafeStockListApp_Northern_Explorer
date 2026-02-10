@@ -1057,10 +1057,13 @@ fun DraggableStockRow(
     onMoveDown: () -> Unit
 ) {
     var isDragging by remember { mutableStateOf(false) }
-    var closeValue by remember(clearTrigger) { mutableStateOf(row.closingPrev) }
-    var loadValue by remember(clearTrigger) { mutableStateOf(row.loading) }
 
-    val calculatedTotal by remember {
+    // KEY FIX: Watch both clearTrigger AND the actual row values
+    var closeValue by remember(clearTrigger, row.closingPrev) { mutableStateOf(row.closingPrev) }
+    var loadValue by remember(clearTrigger, row.loading) { mutableStateOf(row.loading) }
+
+    // KEY FIX: Watch closeValue and loadValue changes
+    val calculatedTotal by remember(closeValue, loadValue) {
         derivedStateOf {
             val close = closeValue.toIntOrNull() ?: 0
             val load = loadValue.toIntOrNull() ?: 0
@@ -1211,11 +1214,13 @@ fun BeverageCategoryHeader(name: String) {
 
 @Composable
 fun BeverageStockRow(row: BeverageRow, clearTrigger: Int, isDarkMode: Boolean) {
-    var closingCafe by remember(clearTrigger) { mutableStateOf(row.closingCafe) }
-    var closingAG by remember(clearTrigger) { mutableStateOf(row.closingAG) }
-    var loading by remember(clearTrigger) { mutableStateOf(row.loading) }
+    // KEY FIX: Watch both clearTrigger AND the actual row values
+    var closingCafe by remember(clearTrigger, row.closingCafe) { mutableStateOf(row.closingCafe) }
+    var closingAG by remember(clearTrigger, row.closingAG) { mutableStateOf(row.closingAG) }
+    var loading by remember(clearTrigger, row.loading) { mutableStateOf(row.loading) }
 
-    val calculatedTotal by remember {
+    // KEY FIX: Watch the state variables for changes
+    val calculatedTotal by remember(closingCafe, closingAG, loading) {
         derivedStateOf {
             val cafe = closingCafe.toIntOrNull() ?: 0
             val ag = closingAG.toIntOrNull() ?: 0
