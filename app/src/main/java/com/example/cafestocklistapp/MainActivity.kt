@@ -9,12 +9,15 @@ import android.os.Bundle
 import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,17 +28,23 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.vector.ImageVector
+import kotlinx.coroutines.delay
 import com.example.cafestocklistapp.ui.theme.CafeStockListAppTheme
 import java.io.File
 import java.io.FileOutputStream
@@ -44,12 +53,16 @@ import java.util.*
 
 /* ==================== KIWIRAIL BRANDING COLORS ==================== */
 private val KiwiRailOrange = Color(0xFFFF6600)
+private val KiwiRailOrangeLight = Color(0xFFFF9966)
 private val KiwiRailBlack = Color(0xFF1A1A1A)
 private val KiwiRailWhite = Color(0xFFFFFFFF)
 private val KiwiRailLightGray = Color(0xFFF5F5F5)
 private val KiwiRailDarkGray = Color(0xFF4A4A4A)
 private val KiwiRailGreen = Color(0xFF4CAF50)
 private val KiwiRailRed = Color(0xFFE53935)
+private val KiwiRailSuccess = Color(0xFF2E7D32)
+private val KiwiRailInfo = Color(0xFF0288D1)
+private val KiwiRailWarning = Color(0xFFFF9800)
 
 /* -------------------- DATA MODELS -------------------- */
 
@@ -250,7 +263,7 @@ fun MainScreen(
 
             StockSheet(
                 pageName = "WLG-AKL-200",
-                displayTitle = "WLG → AKL (200)",
+                displayTitle = "Wellington → Auckland",
                 serviceNumber = "200",
                 foodCategories = sheet200,
                 beverageCategories = beverages200,
@@ -299,7 +312,7 @@ fun MainScreen(
 
             StockSheet(
                 pageName = "AKL-WLG-201",
-                displayTitle = "AKL → WLG (201)",
+                displayTitle = "Auckland → Wellington",
                 serviceNumber = "201",
                 foodCategories = sheet201,
                 beverageCategories = beverages201,
@@ -346,6 +359,8 @@ fun TripSelectionScreen(
     onToggleDarkMode: () -> Unit,
     onTripSelected: (String) -> Unit
 ) {
+    val scrollState = rememberScrollState()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -354,143 +369,181 @@ fun TripSelectionScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(horizontal = 24.dp)
+                .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // Modern logo container
             Box(
                 modifier = Modifier
-                    .size(100.dp)
-                    .clip(RoundedCornerShape(50.dp))
-                    .background(KiwiRailOrange),
+                    .size(120.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = listOf(KiwiRailOrange, KiwiRailOrangeLight)
+                        )
+                    )
+                    .padding(12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "KR",
-                    fontSize = 40.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = KiwiRailWhite
+                Icon(
+                    Icons.Filled.Train,
+                    contentDescription = "KiwiRail",
+                    modifier = Modifier.size(64.dp),
+                    tint = KiwiRailWhite
                 )
             }
 
             Spacer(Modifier.height(32.dp))
 
             Text(
-                "KiwiRail Cafe",
+                "KiwiRail Café Stock",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
             )
 
             Text(
-                "Stock Management",
+                "Stock Management System",
                 fontSize = 16.sp,
-                color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray
+                color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray,
+                modifier = Modifier.padding(top = 4.dp)
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(48.dp))
 
-            Text(
-                "Select Your Service",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = KiwiRailOrange
-            )
-
-            Spacer(Modifier.height(40.dp))
-
-            TripButton(
-                title = "WLG → AKL",
+            // Service cards with better visual feedback
+            ServiceCard(
+                title = "Wellington → Auckland",
                 subtitle = "Service 200",
+                departureTime = "Departs 07:45",
                 isDarkMode = isDarkMode,
                 onClick = { onTripSelected("200") }
             )
 
             Spacer(Modifier.height(20.dp))
 
-            TripButton(
-                title = "AKL → WLG",
+            ServiceCard(
+                title = "Auckland → Wellington",
                 subtitle = "Service 201",
+                departureTime = "Departs 08:45",
                 isDarkMode = isDarkMode,
                 onClick = { onTripSelected("201") }
             )
+
+            Spacer(Modifier.height(40.dp))
+
+            // Help text
+            Text(
+                "Select a service to begin stock count",
+                fontSize = 12.sp,
+                color = if (isDarkMode) KiwiRailDarkGray else Color.Gray,
+                fontStyle = FontStyle.Italic
+            )
         }
 
-        IconButton(
+        // Modern FAB for dark mode toggle
+        FloatingActionButton(
             onClick = onToggleDarkMode,
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
+                .align(Alignment.BottomEnd)
+                .padding(24.dp)
+                .size(56.dp),
+            containerColor = KiwiRailOrange,
+            contentColor = KiwiRailWhite,
+            shape = CircleShape
         ) {
             Icon(
-                imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                contentDescription = "Toggle Dark Mode",
-                tint = KiwiRailOrange
+                imageVector = if (isDarkMode) Icons.Filled.LightMode else Icons.Filled.DarkMode,
+                contentDescription = "Toggle theme"
             )
         }
     }
 }
 
 @Composable
-fun TripButton(
+fun ServiceCard(
     title: String,
     subtitle: String,
+    departureTime: String,
     isDarkMode: Boolean,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val elevation by animateFloatAsState(if (isPressed) 2f else 8f)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp)
-            .shadow(8.dp, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
+            .clickable(
+                onClick = onClick,
+                interactionSource = interactionSource,
+                indication = null
+            ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
-        )
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = elevation.dp,
+            pressedElevation = 2.dp
+        ),
+        border = CardDefaults.outlinedCardBorder()
     ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(KiwiRailGreen)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        subtitle,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = KiwiRailGreen,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+
                 Text(
                     title,
-                    fontSize = 24.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+                    color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack,
+                    modifier = Modifier.padding(bottom = 4.dp)
                 )
-                Spacer(Modifier.height(4.dp))
+
                 Text(
-                    subtitle,
-                    fontSize = 14.sp,
-                    color = KiwiRailOrange,
-                    fontWeight = FontWeight.Medium
+                    departureTime,
+                    fontSize = 12.sp,
+                    color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray
                 )
             }
 
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(KiwiRailOrange),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "→",
-                    fontSize = 32.sp,
-                    color = KiwiRailWhite,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Icon(
+                Icons.Filled.ArrowForward,
+                contentDescription = "Select",
+                tint = KiwiRailOrange,
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StockSheet(
     pageName: String,
@@ -525,22 +578,27 @@ fun StockSheet(
         endTotal > 0 && par > 0 && endTotal < par
     }
 
+    val scrollState = rememberScrollState()
+
     Column(
         Modifier
             .fillMaxSize()
             .background(if (isDarkMode) KiwiRailBlack else KiwiRailLightGray)
-            .verticalScroll(rememberScrollState())
-            .padding(12.dp)
+            .verticalScroll(scrollState)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        // Top bar
+        // Top bar with menu
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.size(48.dp)
+            ) {
                 Icon(
-                    imageVector = Icons.Default.ArrowBack,
+                    imageVector = Icons.Filled.ArrowBack,
                     contentDescription = "Back",
                     tint = KiwiRailOrange
                 )
@@ -549,25 +607,105 @@ fun StockSheet(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     displayTitle,
-                    fontSize = 20.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
                 )
                 Text(
-                    SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()),
-                    fontSize = 12.sp,
+                    "Service $serviceNumber • Last updated: ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())}",
+                    fontSize = 10.sp,
                     color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray
                 )
             }
 
-            IconButton(onClick = onToggleDarkMode) {
-                Icon(
-                    imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                    contentDescription = "Toggle Dark Mode",
-                    tint = KiwiRailOrange
-                )
+            // Quick actions menu
+            var showMenu by remember { mutableStateOf(false) }
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = "Menu",
+                        tint = KiwiRailOrange
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    modifier = Modifier.background(if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite)
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "Quick Fill PAR",
+                                fontSize = 13.sp,
+                                color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+                            )
+                        },
+                        onClick = {
+                            beverageCategories.forEach { cat ->
+                                cat.rows.forEach { row ->
+                                    val par = row.parLevel.toIntOrNull() ?: 0
+                                    if (par > 0 && row.closingCafe.isEmpty()) {
+                                        row.closingCafe = (par / 2).toString()
+                                        row.closingAG = (par / 2).toString()
+                                    }
+                                }
+                            }
+                            showMenu = false
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Filled.AutoFixHigh, null, tint = KiwiRailOrange)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "Calculate All Totals",
+                                fontSize = 13.sp,
+                                color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+                            )
+                        },
+                        onClick = {
+                            foodCategories.forEach { cat ->
+                                cat.rows.forEach { row ->
+                                    val close = row.closingPrev.toIntOrNull() ?: 0
+                                    val load = row.loading.toIntOrNull() ?: 0
+                                    row.total = (close + load).toString()
+                                }
+                            }
+                            showMenu = false
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Calculate, null, tint = KiwiRailOrange)
+                        }
+                    )
+                    Divider()
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "Toggle Theme",
+                                fontSize = 13.sp,
+                                color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+                            )
+                        },
+                        onClick = {
+                            onToggleDarkMode()
+                            showMenu = false
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Filled.DarkMode, null, tint = KiwiRailOrange)
+                        }
+                    )
+                }
             }
         }
+
+        // Progress Indicator
+        CompletionProgress(foodCategories, beverageCategories, isDarkMode)
 
         // Quick Stats Card
         Card(
@@ -597,8 +735,8 @@ fun StockSheet(
         }
 
         Text(
-            "CLOSING STOCK - PREVIOUS DAY",
-            fontSize = 12.sp,
+            "Crew Information",
+            fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack,
             modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
@@ -606,21 +744,54 @@ fun StockSheet(
 
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            PlaceholderTextField("OSM", osm, onOsmChange, Modifier.weight(1f), isDarkMode)
-            PlaceholderTextField("TM", tm, onTmChange, Modifier.weight(1f), isDarkMode)
-            PlaceholderTextField("CREW", crew, onCrewChange, Modifier.weight(1f), isDarkMode)
-            DatePickerField("DATE", date, onDateChange, Modifier.weight(1f), isDarkMode)
+            PlaceholderTextField(
+                placeholder = "OSM",
+                value = osm,
+                onValueChange = onOsmChange,
+                modifier = Modifier.weight(1f),
+                isDarkMode = isDarkMode
+            )
+            PlaceholderTextField(
+                placeholder = "TM",
+                value = tm,
+                onValueChange = onTmChange,
+                modifier = Modifier.weight(1f),
+                isDarkMode = isDarkMode
+            )
         }
 
         Spacer(Modifier.height(8.dp))
 
         Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PlaceholderTextField(
+                placeholder = "CREW",
+                value = crew,
+                onValueChange = onCrewChange,
+                modifier = Modifier.weight(1f),
+                isDarkMode = isDarkMode
+            )
+            DatePickerField(
+                placeholder = "DATE",
+                value = date,
+                onValueChange = onDateChange,
+                modifier = Modifier.weight(1f),
+                isDarkMode = isDarkMode
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Action Buttons
+        Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            OutlinedButton(
+            Button(
                 onClick = {
                     foodCategories.forEach { cat ->
                         cat.rows.forEach { row ->
@@ -652,17 +823,15 @@ fun StockSheet(
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = KiwiRailOrange
                 ),
-                border = androidx.compose.foundation.BorderStroke(2.dp, KiwiRailOrange),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Filled.Delete, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Clear", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
 
             Button(
                 onClick = {
-                    // Fill PAR levels to closing stock
                     beverageCategories.forEach { cat ->
                         cat.rows.forEach { row ->
                             val par = row.parLevel.toIntOrNull() ?: 0
@@ -680,7 +849,7 @@ fun StockSheet(
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.Settings, null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Filled.Settings, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Fill PAR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
@@ -696,20 +865,20 @@ fun StockSheet(
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Filled.Share, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Export", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(20.dp))
 
         Text(
             "FOOD STOCK",
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack,
-            modifier = Modifier.padding(vertical = 8.dp)
+            modifier = Modifier.padding(bottom = 12.dp)
         )
 
         Surface(
@@ -724,7 +893,7 @@ fun StockSheet(
                     CompactCategoryHeader(category.name, isDarkMode)
 
                     category.rows.forEachIndexed { index, row ->
-                        DraggableStockRow(
+                        ModernStockRow(
                             row = row,
                             clearTrigger = clearTrigger,
                             isDarkMode = isDarkMode,
@@ -745,7 +914,11 @@ fun StockSheet(
 
         Spacer(Modifier.height(32.dp))
 
-        HorizontalDivider(thickness = 2.dp, color = KiwiRailOrange)
+        HorizontalDivider(
+            thickness = 1.dp,
+            color = KiwiRailOrange.copy(alpha = 0.3f),
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
 
         Spacer(Modifier.height(16.dp))
 
@@ -754,7 +927,7 @@ fun StockSheet(
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack,
-            modifier = Modifier.padding(vertical = 8.dp)
+            modifier = Modifier.padding(bottom = 12.dp)
         )
 
         Surface(
@@ -768,7 +941,7 @@ fun StockSheet(
                 beverageCategories.forEach { section ->
                     BeverageCategoryHeader(section.name)
                     section.rows.forEach { row ->
-                        BeverageStockRow(row = row, clearTrigger = clearTrigger, isDarkMode = isDarkMode)
+                        ModernBeverageStockRow(row = row, clearTrigger = clearTrigger, isDarkMode = isDarkMode)
                     }
                 }
             }
@@ -822,7 +995,7 @@ fun StockSheet(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(
-                        Icons.Default.ArrowForward,
+                        Icons.Filled.ArrowForward,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp)
                     )
@@ -861,7 +1034,7 @@ fun StockSheet(
                             "Make sure you've completed Service $serviceNumber before transferring!",
                             fontSize = 12.sp,
                             color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            fontStyle = FontStyle.Italic
                         )
                     }
                 },
@@ -893,6 +1066,97 @@ fun StockSheet(
 }
 
 @Composable
+fun CompletionProgress(
+    foodCategories: List<CategorySection>,
+    beverageCategories: List<BeverageSection>,
+    isDarkMode: Boolean
+) {
+    val totalFoodRows = foodCategories.sumOf { it.rows.size }
+    val completedFoodRows = foodCategories.sumOf { category ->
+        category.rows.count { row ->
+            row.closingPrev.isNotEmpty() &&
+                    row.loading.isNotEmpty() &&
+                    row.endDay.isNotEmpty()
+        }
+    }
+
+    val totalBeverageRows = beverageCategories.sumOf { it.rows.size }
+    val completedBeverageRows = beverageCategories.sumOf { category ->
+        category.rows.count { row ->
+            row.closingCafe.isNotEmpty() &&
+                    row.closingAG.isNotEmpty() &&
+                    row.endDayCafe.isNotEmpty() &&
+                    row.endDayAG.isNotEmpty()
+        }
+    }
+
+    val totalRows = totalFoodRows + totalBeverageRows
+    val completedRows = completedFoodRows + completedBeverageRows
+    val progress = if (totalRows > 0) completedRows.toFloat() / totalRows.toFloat() else 0f
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "Progress",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+                )
+                Text(
+                    "${completedRows}/${totalRows} items",
+                    fontSize = 12.sp,
+                    color = KiwiRailOrange
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = KiwiRailOrange,
+                trackColor = if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f) else KiwiRailLightGray
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "Food: $completedFoodRows/$totalFoodRows",
+                    fontSize = 11.sp,
+                    color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray
+                )
+                Text(
+                    "Beverages: $completedBeverageRows/$totalBeverageRows",
+                    fontSize = 11.sp,
+                    color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun StatItem(label: String, value: String, isDarkMode: Boolean, isWarning: Boolean = false) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
@@ -908,7 +1172,6 @@ fun StatItem(label: String, value: String, isDarkMode: Boolean, isWarning: Boole
         )
     }
 }
-
 
 @Composable
 fun PlaceholderTextField(
@@ -1007,7 +1270,7 @@ fun DatePickerField(
                     if (isDarkMode) KiwiRailWhite else KiwiRailBlack
             )
             Icon(
-                imageVector = Icons.Default.CalendarToday,
+                imageVector = Icons.Filled.CalendarToday,
                 contentDescription = "Select Date",
                 modifier = Modifier.size(16.dp),
                 tint = KiwiRailOrange
@@ -1049,7 +1312,7 @@ fun CompactCategoryHeader(name: String, isDarkMode: Boolean = false) {
 }
 
 @Composable
-fun DraggableStockRow(
+fun ModernStockRow(
     row: StockRow,
     clearTrigger: Int,
     isDarkMode: Boolean,
@@ -1057,54 +1320,185 @@ fun DraggableStockRow(
     onMoveDown: () -> Unit
 ) {
     var isDragging by remember { mutableStateOf(false) }
-
-    // KEY FIX: Watch both clearTrigger AND the actual row values
     var closeValue by remember(clearTrigger, row.closingPrev) { mutableStateOf(row.closingPrev) }
     var loadValue by remember(clearTrigger, row.loading) { mutableStateOf(row.loading) }
 
-    // KEY FIX: Watch closeValue and loadValue changes
     val calculatedTotal by remember(closeValue, loadValue) {
         derivedStateOf {
             val close = closeValue.toIntOrNull() ?: 0
             val load = loadValue.toIntOrNull() ?: 0
-            val total = close + load
-            if (total > 0 || closeValue.isNotEmpty() || loadValue.isNotEmpty()) total.toString() else ""
+            close + load
         }
     }
 
-    row.total = calculatedTotal
+    row.total = calculatedTotal.toString()
+
+    val isComplete = calculatedTotal > 0 && row.sales.isNotEmpty() && row.endDay.isNotEmpty()
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                if (isDragging) KiwiRailOrange.copy(alpha = 0.15f)
+                if (isDragging) KiwiRailOrange.copy(alpha = 0.1f)
+                else if (isComplete) KiwiRailGreen.copy(alpha = 0.05f)
                 else if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
             )
-            .border(0.5.dp, if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f) else Color.LightGray)
+            .border(
+                width = if (isComplete) 1.dp else 0.5.dp,
+                color = if (isComplete) KiwiRailGreen.copy(alpha = 0.3f)
+                else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.3f)
+                else Color.LightGray.copy(alpha = 0.3f)
+            )
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { isDragging = true },
                     onDragEnd = { isDragging = false },
                     onDragCancel = { isDragging = false },
                     onDrag = { _, dragAmount ->
-                        if (dragAmount.y < -20) onMoveUp()
-                        else if (dragAmount.y > 20) onMoveDown()
+                        if (dragAmount.y < -30) onMoveUp()
+                        else if (dragAmount.y > 30) onMoveDown()
                     }
                 )
             }
-            .padding(vertical = 4.dp, horizontal = 6.dp)
+            .padding(vertical = 6.dp, horizontal = 8.dp)
     ) {
-        Text(row.product, fontSize = 10.sp, modifier = Modifier.weight(2.8f), color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack)
-        CompactNumericField(closeValue, Modifier.weight(1f), clearTrigger, isDarkMode) { closeValue = it; row.closingPrev = it }
-        CompactNumericField(loadValue, Modifier.weight(1f), clearTrigger, isDarkMode) { loadValue = it; row.loading = it }
-        ReadOnlyNumericField(calculatedTotal, Modifier.weight(1f))
+        // Product name with drag handle
+        Row(
+            modifier = Modifier.weight(2.8f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Filled.DragHandle,
+                contentDescription = "Drag to reorder",
+                modifier = Modifier
+                    .size(16.dp)
+                    .alpha(0.5f),
+                tint = KiwiRailOrange
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                row.product,
+                fontSize = 11.sp,
+                fontWeight = if (isComplete) FontWeight.Bold else FontWeight.Normal,
+                color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+            )
+        }
+
+        // Compact numeric fields with better validation
+        ValidatedNumericField(
+            value = closeValue,
+            modifier = Modifier.weight(1f),
+            clearTrigger = clearTrigger,
+            isDarkMode = isDarkMode,
+            isValid = { it.isNotEmpty() },
+            onChange = { closeValue = it; row.closingPrev = it }
+        )
+
+        ValidatedNumericField(
+            value = loadValue,
+            modifier = Modifier.weight(1f),
+            clearTrigger = clearTrigger,
+            isDarkMode = isDarkMode,
+            isValid = { it.isNotEmpty() },
+            onChange = { loadValue = it; row.loading = it }
+        )
+
+        // Total field with visual distinction
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(36.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(
+                    if (calculatedTotal > 0) KiwiRailOrange.copy(alpha = 0.1f)
+                    else Color.Transparent
+                )
+                .border(
+                    1.dp,
+                    if (calculatedTotal > 0) KiwiRailOrange.copy(alpha = 0.3f)
+                    else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.3f)
+                    else Color.LightGray.copy(alpha = 0.3f),
+                    RoundedCornerShape(6.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (calculatedTotal > 0) calculatedTotal.toString() else "",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (calculatedTotal > 0) KiwiRailOrange else if (isDarkMode) KiwiRailDarkGray else Color.Gray
+            )
+        }
+
         CompactNumericField(row.sales, Modifier.weight(1f), clearTrigger, isDarkMode) { row.sales = it }
         CompactNumericField(row.prePurchase, Modifier.weight(1f), clearTrigger, isDarkMode) { row.prePurchase = it }
         CompactNumericField(row.waste, Modifier.weight(1f), clearTrigger, isDarkMode) { row.waste = it }
         CompactNumericField(row.endDay, Modifier.weight(1f), clearTrigger, isDarkMode) { row.endDay = it }
     }
+}
+
+@Composable
+fun ValidatedNumericField(
+    value: String,
+    modifier: Modifier = Modifier,
+    clearTrigger: Int = 0,
+    isDarkMode: Boolean = false,
+    isValid: (String) -> Boolean = { true },
+    onChange: (String) -> Unit
+) {
+    var textValue by remember(value, clearTrigger) { mutableStateOf(value) }
+    val isValidValue = isValid(textValue)
+
+    BasicTextField(
+        value = textValue,
+        onValueChange = { newValue ->
+            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
+                textValue = newValue
+                onChange(newValue)
+            }
+        },
+        modifier = modifier
+            .padding(horizontal = 2.dp)
+            .height(38.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(
+                if (isValidValue && textValue.isNotEmpty()) KiwiRailGreen.copy(alpha = 0.1f)
+                else if (isDarkMode) KiwiRailBlack else KiwiRailLightGray
+            )
+            .border(
+                1.dp,
+                if (textValue.isNotEmpty()) {
+                    if (isValidValue) KiwiRailGreen.copy(alpha = 0.5f)
+                    else KiwiRailRed.copy(alpha = 0.5f)
+                } else if (isDarkMode) KiwiRailDarkGray else Color.LightGray,
+                RoundedCornerShape(6.dp)
+            ),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        textStyle = LocalTextStyle.current.copy(
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack,
+            fontWeight = if (textValue.isNotEmpty()) FontWeight.Bold else FontWeight.Normal
+        ),
+        decorationBox = { innerTextField ->
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                innerTextField()
+                if (isValidValue && textValue.isNotEmpty()) {
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = "Valid",
+                        modifier = Modifier
+                            .size(10.dp)
+                            .align(Alignment.TopEnd)
+                            .padding(2.dp),
+                        tint = KiwiRailGreen
+                    )
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -1153,21 +1547,6 @@ fun CompactNumericField(
 }
 
 @Composable
-fun ReadOnlyNumericField(value: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .padding(horizontal = 2.dp)
-            .height(38.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(KiwiRailOrange.copy(alpha = 0.15f))
-            .border(1.dp, KiwiRailOrange.copy(alpha = 0.5f), RoundedCornerShape(6.dp)),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text = value, fontSize = 12.sp, textAlign = TextAlign.Center, color = KiwiRailOrange, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
 fun BeverageTableHeader(serviceNumber: String) {
     val closingDay = if (serviceNumber == "200") "201" else "200"
     val loadingLocation = if (serviceNumber == "200") "WLG" else "AKL"
@@ -1213,48 +1592,71 @@ fun BeverageCategoryHeader(name: String) {
 }
 
 @Composable
-fun BeverageStockRow(row: BeverageRow, clearTrigger: Int, isDarkMode: Boolean) {
-    // KEY FIX: Watch both clearTrigger AND the actual row values
+fun ModernBeverageStockRow(row: BeverageRow, clearTrigger: Int, isDarkMode: Boolean) {
+    // Watch both clearTrigger AND the actual row values
     var closingCafe by remember(clearTrigger, row.closingCafe) { mutableStateOf(row.closingCafe) }
     var closingAG by remember(clearTrigger, row.closingAG) { mutableStateOf(row.closingAG) }
     var loading by remember(clearTrigger, row.loading) { mutableStateOf(row.loading) }
 
-    // KEY FIX: Watch the state variables for changes
+    // Calculate total
     val calculatedTotal by remember(closingCafe, closingAG, loading) {
         derivedStateOf {
             val cafe = closingCafe.toIntOrNull() ?: 0
             val ag = closingAG.toIntOrNull() ?: 0
             val load = loading.toIntOrNull() ?: 0
-            val total = cafe + ag + load
-            if (total > 0) total.toString() else ""
+            cafe + ag + load
         }
     }
 
-    row.total = calculatedTotal
+    row.total = calculatedTotal.toString()
 
     // Check if below PAR
     val endTotal = (row.endDayCafe.toIntOrNull() ?: 0) + (row.endDayAG.toIntOrNull() ?: 0)
     val par = row.parLevel.toIntOrNull() ?: 0
     val isBelowPar = endTotal > 0 && par > 0 && endTotal < par
+    val isComplete = closingCafe.isNotEmpty() && closingAG.isNotEmpty() &&
+            row.endDayCafe.isNotEmpty() && row.endDayAG.isNotEmpty()
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite)
-            .border(
-                width = if (isBelowPar) 2.dp else 0.5.dp,
-                color = if (isBelowPar) KiwiRailOrange else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f) else Color.LightGray
+            .background(
+                if (isComplete) KiwiRailGreen.copy(alpha = 0.05f)
+                else if (isBelowPar) KiwiRailOrange.copy(alpha = 0.05f)
+                else if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
             )
-            .padding(vertical = 3.dp, horizontal = 4.dp)
+            .border(
+                width = if (isBelowPar) 2.dp else if (isComplete) 1.dp else 0.5.dp,
+                color = if (isBelowPar) KiwiRailOrange.copy(alpha = 0.5f)
+                else if (isComplete) KiwiRailGreen.copy(alpha = 0.3f)
+                else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f) else Color.LightGray
+            )
+            .padding(vertical = 4.dp, horizontal = 4.dp)
     ) {
         Column(Modifier.weight(0.8f)) {
-            Text(row.product, fontSize = 9.sp, lineHeight = 10.sp, color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack)
+            Text(
+                row.product,
+                fontSize = 9.sp,
+                lineHeight = 10.sp,
+                fontWeight = if (isComplete) FontWeight.Bold else FontWeight.Normal,
+                color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(row.parLevel, fontSize = 8.sp, color = KiwiRailOrange, fontWeight = FontWeight.Bold)
+                Text(
+                    row.parLevel,
+                    fontSize = 8.sp,
+                    color = if (isBelowPar) KiwiRailOrange else KiwiRailInfo,
+                    fontWeight = FontWeight.Bold
+                )
                 if (isBelowPar) {
                     Spacer(Modifier.width(4.dp))
-                    Text("⚠", fontSize = 8.sp, color = KiwiRailOrange)
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = "Low stock",
+                        modifier = Modifier.size(8.dp),
+                        tint = KiwiRailOrange
+                    )
                 }
             }
         }
@@ -1262,7 +1664,33 @@ fun BeverageStockRow(row: BeverageRow, clearTrigger: Int, isDarkMode: Boolean) {
         TinyNumericField(closingCafe, Modifier.weight(0.8f), clearTrigger, isDarkMode) { closingCafe = it; row.closingCafe = it }
         TinyNumericField(closingAG, Modifier.weight(0.8f), clearTrigger, isDarkMode) { closingAG = it; row.closingAG = it }
         TinyNumericField(loading, Modifier.weight(0.9f), clearTrigger, isDarkMode) { loading = it; row.loading = it }
-        ReadOnlyTinyField(calculatedTotal, Modifier.weight(0.8f))
+
+        // Total field
+        Box(
+            modifier = Modifier
+                .weight(0.8f)
+                .height(32.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(
+                    if (calculatedTotal > 0) KiwiRailOrange.copy(alpha = 0.1f)
+                    else Color.Transparent
+                )
+                .border(
+                    1.dp,
+                    if (calculatedTotal > 0) KiwiRailOrange.copy(alpha = 0.3f)
+                    else if (isDarkMode) KiwiRailDarkGray else Color.LightGray,
+                    RoundedCornerShape(4.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (calculatedTotal > 0) calculatedTotal.toString() else "",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (calculatedTotal > 0) KiwiRailOrange else if (isDarkMode) KiwiRailDarkGray else Color.Gray
+            )
+        }
+
         TinyNumericField(row.sales, Modifier.weight(0.9f), clearTrigger, isDarkMode) { row.sales = it }
         TinyNumericField(row.prePurchase, Modifier.weight(0.8f), clearTrigger, isDarkMode) { row.prePurchase = it }
         TinyNumericField(row.waste, Modifier.weight(0.8f), clearTrigger, isDarkMode) { row.waste = it }
@@ -1314,21 +1742,6 @@ fun TinyNumericField(
             }
         }
     )
-}
-
-@Composable
-fun ReadOnlyTinyField(value: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .padding(horizontal = 1.dp)
-            .height(32.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(KiwiRailOrange.copy(alpha = 0.15f))
-            .border(1.dp, KiwiRailOrange.copy(alpha = 0.5f), RoundedCornerShape(4.dp)),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text = value, fontSize = 10.sp, textAlign = TextAlign.Center, color = KiwiRailOrange, fontWeight = FontWeight.Bold)
-    }
 }
 
 fun getFoodCategories(): MutableList<CategorySection> {
