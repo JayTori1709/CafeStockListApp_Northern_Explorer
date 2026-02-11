@@ -10,6 +10,7 @@ import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -135,59 +138,136 @@ class MainActivity : ComponentActivity() {
         date: String
     ) {
         val pdf = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(1200, 1800, 1).create()
+        val pageInfo = PdfDocument.PageInfo.Builder(1200, 2000, 1).create()
         val page = pdf.startPage(pageInfo)
         val canvas = page.canvas
         val paint = Paint()
 
-        paint.textSize = 28f
+        // Set background color
+        canvas.drawColor(android.graphics.Color.WHITE)
+
+        // Header Section
+        paint.textSize = 32f
         paint.isFakeBoldText = true
-        canvas.drawText("$pageName CLOSING STOCK", 40f, 50f, paint)
+        paint.color = android.graphics.Color.parseColor("#FF6600")
+        canvas.drawText("$pageName CLOSING STOCK", 50f, 80f, paint)
+
+        paint.textSize = 16f
+        paint.isFakeBoldText = false
+        paint.color = android.graphics.Color.BLACK
+        canvas.drawText("OSM: $osm", 50f, 110f, paint)
+        canvas.drawText("TM: $tm", 250f, 110f, paint)
+        canvas.drawText("CREW: $crew", 450f, 110f, paint)
+        canvas.drawText("DATE: $date", 650f, 110f, paint)
+
+        var y = 150f
+
+        // Food Stock Section
+        paint.textSize = 24f
+        paint.isFakeBoldText = true
+        paint.color = android.graphics.Color.BLACK
+        canvas.drawText("FOOD STOCK", 50f, y, paint)
+        y += 30f
 
         paint.textSize = 14f
-        paint.isFakeBoldText = false
-        canvas.drawText("OSM: $osm / TM: $tm / CREW: $crew / DATE: $date", 40f, 80f, paint)
+        paint.isFakeBoldText = true
+        paint.color = android.graphics.Color.parseColor("#FF6600")
 
-        var y = 120f
+        // Food Table Header
+        canvas.drawText("PRODUCT", 60f, y, paint)
+        canvas.drawText("CLOSE", 350f, y, paint)
+        canvas.drawText("LOAD", 420f, y, paint)
+        canvas.drawText("TOTAL", 490f, y, paint)
+        canvas.drawText("SALES", 560f, y, paint)
+        canvas.drawText("PRE", 630f, y, paint)
+        canvas.drawText("WASTE", 700f, y, paint)
+        canvas.drawText("END", 770f, y, paint)
+        y += 20f
+
+        paint.textSize = 12f
+        paint.isFakeBoldText = false
+        paint.color = android.graphics.Color.BLACK
 
         categories.forEach { category ->
+            // Category header
             paint.textSize = 16f
             paint.isFakeBoldText = true
             canvas.drawText(category.name, 50f, y, paint)
             y += 20f
 
-            paint.textSize = 10f
+            paint.textSize = 12f
             paint.isFakeBoldText = false
+
             category.rows.forEach { row ->
-                if (y > 1700f) return@forEach
-                canvas.drawText(
-                    "${row.product}: C:${row.closingPrev} L:${row.loading} T:${row.total}",
-                    60f, y, paint
-                )
+                if (y > 1800f) return@forEach
+
+                canvas.drawText(row.product, 60f, y, paint)
+                canvas.drawText(row.closingPrev, 350f, y, paint)
+                canvas.drawText(row.loading, 420f, y, paint)
+                canvas.drawText(row.total, 490f, y, paint)
+                canvas.drawText(row.sales, 560f, y, paint)
+                canvas.drawText(row.prePurchase, 630f, y, paint)
+                canvas.drawText(row.waste, 700f, y, paint)
+                canvas.drawText(row.endDay, 770f, y, paint)
                 y += 16f
             }
             y += 15f
         }
 
-        paint.textSize = 18f
+        y += 20f
+
+        // Retail Stock Section
+        paint.textSize = 24f
         paint.isFakeBoldText = true
-        canvas.drawText("RETAIL STOCK", 50f, y, paint)
-        y += 25f
+        paint.color = android.graphics.Color.BLACK
+        canvas.drawText("RETAIL STOCK (CAFÉ & AG)", 50f, y, paint)
+        y += 30f
+
+        paint.textSize = 14f
+        paint.isFakeBoldText = true
+        paint.color = android.graphics.Color.parseColor("#FF6600")
+
+        // Retail Table Header
+        canvas.drawText("PRODUCT (PAR)", 60f, y, paint)
+        canvas.drawText("CLOSE CAFÉ", 250f, y, paint)
+        canvas.drawText("CLOSE AG", 320f, y, paint)
+        canvas.drawText("LOAD", 390f, y, paint)
+        canvas.drawText("TOTAL", 460f, y, paint)
+        canvas.drawText("SALES", 530f, y, paint)
+        canvas.drawText("PRE", 600f, y, paint)
+        canvas.drawText("WASTE", 670f, y, paint)
+        canvas.drawText("END CAFÉ", 740f, y, paint)
+        canvas.drawText("END AG", 810f, y, paint)
+        y += 20f
+
+        paint.textSize = 12f
+        paint.isFakeBoldText = false
+        paint.color = android.graphics.Color.BLACK
 
         beverages.forEach { section ->
-            paint.textSize = 14f
+            // Section header
+            paint.textSize = 16f
+            paint.isFakeBoldText = true
             canvas.drawText(section.name, 50f, y, paint)
-            y += 18f
+            y += 20f
 
-            paint.textSize = 9f
+            paint.textSize = 11f
             paint.isFakeBoldText = false
+
             section.rows.forEach { row ->
-                if (y > 1700f) return@forEach
-                canvas.drawText(
-                    "${row.product} (${row.parLevel}): Café:${row.closingCafe} AG:${row.closingAG}",
-                    60f, y, paint
-                )
-                y += 14f
+                if (y > 1800f) return@forEach
+
+                canvas.drawText("${row.product} (${row.parLevel})", 60f, y, paint)
+                canvas.drawText(row.closingCafe, 250f, y, paint)
+                canvas.drawText(row.closingAG, 320f, y, paint)
+                canvas.drawText(row.loading, 390f, y, paint)
+                canvas.drawText(row.total, 460f, y, paint)
+                canvas.drawText(row.sales, 530f, y, paint)
+                canvas.drawText(row.prePurchase, 600f, y, paint)
+                canvas.drawText(row.waste, 670f, y, paint)
+                canvas.drawText(row.endDayCafe, 740f, y, paint)
+                canvas.drawText(row.endDayAG, 810f, y, paint)
+                y += 16f
             }
             y += 12f
         }
@@ -579,6 +659,11 @@ fun StockSheet(
     }
 
     val scrollState = rememberScrollState()
+    var showExportError by remember { mutableStateOf(false) }
+    var showTransferError by remember { mutableStateOf(false) }
+
+    // Check if all crew fields are filled
+    val isCrewInfoComplete = osm.isNotBlank() && tm.isNotBlank() && crew.isNotBlank() && date.isNotBlank()
 
     Column(
         Modifier
@@ -677,6 +762,14 @@ fun StockSheet(
                                     row.total = (close + load).toString()
                                 }
                             }
+                            beverageCategories.forEach { cat ->
+                                cat.rows.forEach { row ->
+                                    val cafe = row.closingCafe.toIntOrNull() ?: 0
+                                    val ag = row.closingAG.toIntOrNull() ?: 0
+                                    val load = row.loading.toIntOrNull() ?: 0
+                                    row.total = (cafe + ag + load).toString()
+                                }
+                            }
                             showMenu = false
                         },
                         leadingIcon = {
@@ -735,7 +828,7 @@ fun StockSheet(
         }
 
         Text(
-            "Crew Information",
+            "Crew Information *Required",
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack,
@@ -747,18 +840,20 @@ fun StockSheet(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             PlaceholderTextField(
-                placeholder = "OSM",
+                placeholder = "OSM *",
                 value = osm,
                 onValueChange = onOsmChange,
                 modifier = Modifier.weight(1f),
-                isDarkMode = isDarkMode
+                isDarkMode = isDarkMode,
+                isRequired = true
             )
             PlaceholderTextField(
-                placeholder = "TM",
+                placeholder = "TM *",
                 value = tm,
                 onValueChange = onTmChange,
                 modifier = Modifier.weight(1f),
-                isDarkMode = isDarkMode
+                isDarkMode = isDarkMode,
+                isRequired = true
             )
         }
 
@@ -769,18 +864,20 @@ fun StockSheet(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             PlaceholderTextField(
-                placeholder = "CREW",
+                placeholder = "CREW *",
                 value = crew,
                 onValueChange = onCrewChange,
                 modifier = Modifier.weight(1f),
-                isDarkMode = isDarkMode
+                isDarkMode = isDarkMode,
+                isRequired = true
             )
             DatePickerField(
-                placeholder = "DATE",
+                placeholder = "DATE *",
                 value = date,
                 onValueChange = onDateChange,
                 modifier = Modifier.weight(1f),
-                isDarkMode = isDarkMode
+                isDarkMode = isDarkMode,
+                isRequired = true
             )
         }
 
@@ -827,36 +924,16 @@ fun StockSheet(
             ) {
                 Icon(Icons.Filled.Delete, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Clear", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("Clear All", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
 
             Button(
                 onClick = {
-                    beverageCategories.forEach { cat ->
-                        cat.rows.forEach { row ->
-                            val par = row.parLevel.toIntOrNull() ?: 0
-                            if (par > 0 && row.closingCafe.isEmpty()) {
-                                row.closingCafe = (par / 2).toString()
-                                row.closingAG = (par / 2).toString()
-                            }
-                        }
+                    if (!isCrewInfoComplete) {
+                        showExportError = true
+                    } else {
+                        onExportPdf(pageName, foodCategories, beverageCategories, osm, tm, crew, date)
                     }
-                },
-                modifier = Modifier.weight(1f).height(52.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite,
-                    contentColor = KiwiRailOrange
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Filled.Settings, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Fill PAR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-
-            Button(
-                onClick = {
-                    onExportPdf(pageName, foodCategories, beverageCategories, osm, tm, crew, date)
                 },
                 modifier = Modifier.weight(1f).height(52.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -867,8 +944,47 @@ fun StockSheet(
             ) {
                 Icon(Icons.Filled.Share, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Export", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("Export PDF", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
+        }
+
+        // Export Error Dialog
+        if (showExportError) {
+            AlertDialog(
+                onDismissRequest = { showExportError = false },
+                title = {
+                    Text(
+                        "Missing Information",
+                        fontWeight = FontWeight.Bold,
+                        color = KiwiRailOrange
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            "Please fill in all crew information fields before exporting:",
+                            fontWeight = FontWeight.Normal
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        if (osm.isBlank()) Text("• OSM is required", color = KiwiRailRed)
+                        if (tm.isBlank()) Text("• TM is required", color = KiwiRailRed)
+                        if (crew.isBlank()) Text("• CREW is required", color = KiwiRailRed)
+                        if (date.isBlank()) Text("• DATE is required", color = KiwiRailRed)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { showExportError = false },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = KiwiRailOrange
+                        )
+                    ) {
+                        Text("OK")
+                    }
+                },
+                containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite,
+                shape = RoundedCornerShape(16.dp)
+            )
         }
 
         Spacer(Modifier.height(20.dp))
@@ -893,19 +1009,12 @@ fun StockSheet(
                     CompactCategoryHeader(category.name, isDarkMode)
 
                     category.rows.forEachIndexed { index, row ->
-                        ModernStockRow(
+                        DraggableStockRow(
                             row = row,
                             clearTrigger = clearTrigger,
                             isDarkMode = isDarkMode,
-                            onMoveUp = {
-                                if (index > 0) category.rows.swap(index, index - 1)
-                            },
-                            onMoveDown = {
-                                if (index < category.rows.lastIndex) category.rows.swap(
-                                    index,
-                                    index + 1
-                                )
-                            }
+                            category = category,
+                            rowIndex = index
                         )
                     }
                 }
@@ -984,7 +1093,13 @@ fun StockSheet(
                 Spacer(Modifier.height(12.dp))
 
                 Button(
-                    onClick = { showTransferDialog = true },
+                    onClick = {
+                        if (!isCrewInfoComplete) {
+                            showTransferError = true
+                        } else {
+                            showTransferDialog = true
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -1007,6 +1122,45 @@ fun StockSheet(
                     )
                 }
             }
+        }
+
+        // Transfer Error Dialog
+        if (showTransferError) {
+            AlertDialog(
+                onDismissRequest = { showTransferError = false },
+                title = {
+                    Text(
+                        "Missing Information",
+                        fontWeight = FontWeight.Bold,
+                        color = KiwiRailOrange
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            "Please fill in all crew information fields before transferring totals:",
+                            fontWeight = FontWeight.Normal
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        if (osm.isBlank()) Text("• OSM is required", color = KiwiRailRed)
+                        if (tm.isBlank()) Text("• TM is required", color = KiwiRailRed)
+                        if (crew.isBlank()) Text("• CREW is required", color = KiwiRailRed)
+                        if (date.isBlank()) Text("• DATE is required", color = KiwiRailRed)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { showTransferError = false },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = KiwiRailOrange
+                        )
+                    ) {
+                        Text("OK")
+                    }
+                },
+                containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite,
+                shape = RoundedCornerShape(16.dp)
+            )
         }
 
         // Confirmation Dialog
@@ -1179,8 +1333,11 @@ fun PlaceholderTextField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    isDarkMode: Boolean = false
+    isDarkMode: Boolean = false,
+    isRequired: Boolean = false
 ) {
+    val isError = isRequired && value.isBlank()
+
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
@@ -1190,7 +1347,10 @@ fun PlaceholderTextField(
             .background(if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite)
             .border(
                 1.dp,
-                if (value.isNotEmpty()) KiwiRailOrange else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f) else Color.LightGray,
+                if (isError) KiwiRailRed
+                else if (value.isNotEmpty()) KiwiRailOrange
+                else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f)
+                else Color.LightGray,
                 RoundedCornerShape(8.dp)
             )
             .padding(horizontal = 12.dp, vertical = 14.dp),
@@ -1200,14 +1360,30 @@ fun PlaceholderTextField(
             color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
         ),
         decorationBox = { innerTextField ->
-            if (value.isEmpty()) {
-                Text(
-                    placeholder,
-                    fontSize = 13.sp,
-                    color = if (isDarkMode) KiwiRailDarkGray else Color.Gray
-                )
+            Box {
+                if (value.isEmpty()) {
+                    Text(
+                        placeholder,
+                        fontSize = 13.sp,
+                        color = if (isError) KiwiRailRed else if (isDarkMode) KiwiRailDarkGray else Color.Gray
+                    )
+                }
+                innerTextField()
+                if (isError) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 2.dp, end = 2.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Warning,
+                            contentDescription = "Required",
+                            modifier = Modifier.size(12.dp),
+                            tint = KiwiRailRed
+                        )
+                    }
+                }
             }
-            innerTextField()
         }
     )
 }
@@ -1218,10 +1394,12 @@ fun DatePickerField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    isDarkMode: Boolean = false
+    isDarkMode: Boolean = false,
+    isRequired: Boolean = false
 ) {
     val context = LocalContext.current
     val calendar = Calendar.getInstance()
+    val isError = isRequired && value.isBlank()
 
     if (value.isNotEmpty()) {
         try {
@@ -1250,7 +1428,10 @@ fun DatePickerField(
             .background(if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite)
             .border(
                 1.dp,
-                if (value.isNotEmpty()) KiwiRailOrange else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f) else Color.LightGray,
+                if (isError) KiwiRailRed
+                else if (value.isNotEmpty()) KiwiRailOrange
+                else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.5f)
+                else Color.LightGray,
                 RoundedCornerShape(8.dp)
             )
             .clickable { datePickerDialog.show() }
@@ -1265,7 +1446,7 @@ fun DatePickerField(
                 text = value.ifEmpty { placeholder },
                 fontSize = 13.sp,
                 color = if (value.isEmpty())
-                    if (isDarkMode) KiwiRailDarkGray else Color.Gray
+                    if (isError) KiwiRailRed else if (isDarkMode) KiwiRailDarkGray else Color.Gray
                 else
                     if (isDarkMode) KiwiRailWhite else KiwiRailBlack
             )
@@ -1275,6 +1456,20 @@ fun DatePickerField(
                 modifier = Modifier.size(16.dp),
                 tint = KiwiRailOrange
             )
+        }
+        if (isError) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 2.dp, end = 2.dp)
+            ) {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = "Required",
+                    modifier = Modifier.size(12.dp),
+                    tint = KiwiRailRed
+                )
+            }
         }
     }
 }
@@ -1312,14 +1507,21 @@ fun CompactCategoryHeader(name: String, isDarkMode: Boolean = false) {
 }
 
 @Composable
-fun ModernStockRow(
+fun DraggableStockRow(
     row: StockRow,
     clearTrigger: Int,
     isDarkMode: Boolean,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit
+    category: CategorySection,
+    rowIndex: Int
 ) {
     var isDragging by remember { mutableStateOf(false) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var scale by remember { mutableStateOf(1f) }
+    val scaleAnimation by animateFloatAsState(
+        targetValue = if (isDragging) 1.05f else 1f,
+        animationSpec = tween(durationMillis = 200)
+    )
+
     var closeValue by remember(clearTrigger, row.closingPrev) { mutableStateOf(row.closingPrev) }
     var loadValue by remember(clearTrigger, row.loading) { mutableStateOf(row.loading) }
 
@@ -1335,106 +1537,139 @@ fun ModernStockRow(
 
     val isComplete = calculatedTotal > 0 && row.sales.isNotEmpty() && row.endDay.isNotEmpty()
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                if (isDragging) KiwiRailOrange.copy(alpha = 0.1f)
-                else if (isComplete) KiwiRailGreen.copy(alpha = 0.05f)
-                else if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
-            )
-            .border(
-                width = if (isComplete) 1.dp else 0.5.dp,
-                color = if (isComplete) KiwiRailGreen.copy(alpha = 0.3f)
-                else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.3f)
-                else Color.LightGray.copy(alpha = 0.3f)
-            )
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(
-                    onDragStart = { isDragging = true },
-                    onDragEnd = { isDragging = false },
-                    onDragCancel = { isDragging = false },
-                    onDrag = { _, dragAmount ->
-                        if (dragAmount.y < -30) onMoveUp()
-                        else if (dragAmount.y > 30) onMoveDown()
+                    onDragStart = { offset ->
+                        isDragging = true
+                        dragOffset = Offset.Zero
+                    },
+                    onDragEnd = {
+                        isDragging = false
+                        dragOffset = Offset.Zero
+                        // Check if we should swap positions
+                        if (dragOffset.y < -40 && rowIndex > 0) {
+                            category.rows.swap(rowIndex, rowIndex - 1)
+                        } else if (dragOffset.y > 40 && rowIndex < category.rows.lastIndex) {
+                            category.rows.swap(rowIndex, rowIndex + 1)
+                        }
+                    },
+                    onDragCancel = {
+                        isDragging = false
+                        dragOffset = Offset.Zero
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragOffset += dragAmount
                     }
                 )
             }
-            .padding(vertical = 6.dp, horizontal = 8.dp)
     ) {
-        // Product name with drag handle
-        Row(
-            modifier = Modifier.weight(2.8f),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Filled.DragHandle,
-                contentDescription = "Drag to reorder",
+        // Background that shows when dragging
+        if (isDragging) {
+            Box(
                 modifier = Modifier
-                    .size(16.dp)
-                    .alpha(0.5f),
-                tint = KiwiRailOrange
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                row.product,
-                fontSize = 11.sp,
-                fontWeight = if (isComplete) FontWeight.Bold else FontWeight.Normal,
-                color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .background(KiwiRailOrange.copy(alpha = 0.1f))
+                    .border(2.dp, KiwiRailOrange, RoundedCornerShape(8.dp))
             )
         }
 
-        // Compact numeric fields with better validation
-        ValidatedNumericField(
-            value = closeValue,
-            modifier = Modifier.weight(1f),
-            clearTrigger = clearTrigger,
-            isDarkMode = isDarkMode,
-            isValid = { it.isNotEmpty() },
-            onChange = { closeValue = it; row.closingPrev = it }
-        )
-
-        ValidatedNumericField(
-            value = loadValue,
-            modifier = Modifier.weight(1f),
-            clearTrigger = clearTrigger,
-            isDarkMode = isDarkMode,
-            isValid = { it.isNotEmpty() },
-            onChange = { loadValue = it; row.loading = it }
-        )
-
-        // Total field with visual distinction
-        Box(
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .weight(1f)
-                .height(36.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .fillMaxWidth()
                 .background(
-                    if (calculatedTotal > 0) KiwiRailOrange.copy(alpha = 0.1f)
-                    else Color.Transparent
+                    if (isDragging) KiwiRailOrange.copy(alpha = 0.2f)
+                    else if (isComplete) KiwiRailGreen.copy(alpha = 0.05f)
+                    else if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
                 )
                 .border(
-                    1.dp,
-                    if (calculatedTotal > 0) KiwiRailOrange.copy(alpha = 0.3f)
+                    width = if (isDragging) 2.dp else if (isComplete) 1.dp else 0.5.dp,
+                    color = if (isDragging) KiwiRailOrange
+                    else if (isComplete) KiwiRailGreen.copy(alpha = 0.3f)
                     else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.3f)
-                    else Color.LightGray.copy(alpha = 0.3f),
-                    RoundedCornerShape(6.dp)
-                ),
-            contentAlignment = Alignment.Center
+                    else Color.LightGray.copy(alpha = 0.3f)
+                )
+                .scale(scaleAnimation)
+                .padding(vertical = 6.dp, horizontal = 8.dp)
         ) {
-            Text(
-                text = if (calculatedTotal > 0) calculatedTotal.toString() else "",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (calculatedTotal > 0) KiwiRailOrange else if (isDarkMode) KiwiRailDarkGray else Color.Gray
-            )
-        }
+            // Product name with drag handle
+            Row(
+                modifier = Modifier.weight(2.8f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    modifier = Modifier
+                        .size(16.dp)
+                        .alpha(if (isDragging) 1f else 0.5f),
+                    tint = KiwiRailOrange
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    row.product,
+                    fontSize = 11.sp,
+                    fontWeight = if (isComplete) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack
+                )
+            }
 
-        CompactNumericField(row.sales, Modifier.weight(1f), clearTrigger, isDarkMode) { row.sales = it }
-        CompactNumericField(row.prePurchase, Modifier.weight(1f), clearTrigger, isDarkMode) { row.prePurchase = it }
-        CompactNumericField(row.waste, Modifier.weight(1f), clearTrigger, isDarkMode) { row.waste = it }
-        CompactNumericField(row.endDay, Modifier.weight(1f), clearTrigger, isDarkMode) { row.endDay = it }
+            // Compact numeric fields with better validation
+            ValidatedNumericField(
+                value = closeValue,
+                modifier = Modifier.weight(1f),
+                clearTrigger = clearTrigger,
+                isDarkMode = isDarkMode,
+                isValid = { it.isNotEmpty() },
+                onChange = { closeValue = it; row.closingPrev = it }
+            )
+
+            ValidatedNumericField(
+                value = loadValue,
+                modifier = Modifier.weight(1f),
+                clearTrigger = clearTrigger,
+                isDarkMode = isDarkMode,
+                isValid = { it.isNotEmpty() },
+                onChange = { loadValue = it; row.loading = it }
+            )
+
+            // Total field with visual distinction
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(36.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(
+                        if (calculatedTotal > 0) KiwiRailOrange.copy(alpha = 0.1f)
+                        else Color.Transparent
+                    )
+                    .border(
+                        1.dp,
+                        if (calculatedTotal > 0) KiwiRailOrange.copy(alpha = 0.3f)
+                        else if (isDarkMode) KiwiRailDarkGray.copy(alpha = 0.3f)
+                        else Color.LightGray.copy(alpha = 0.3f),
+                        RoundedCornerShape(6.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (calculatedTotal > 0) calculatedTotal.toString() else "",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (calculatedTotal > 0) KiwiRailOrange else if (isDarkMode) KiwiRailDarkGray else Color.Gray
+                )
+            }
+
+            CompactNumericField(row.sales, Modifier.weight(1f), clearTrigger, isDarkMode) { row.sales = it }
+            CompactNumericField(row.prePurchase, Modifier.weight(1f), clearTrigger, isDarkMode) { row.prePurchase = it }
+            CompactNumericField(row.waste, Modifier.weight(1f), clearTrigger, isDarkMode) { row.waste = it }
+            CompactNumericField(row.endDay, Modifier.weight(1f), clearTrigger, isDarkMode) { row.endDay = it }
+        }
     }
 }
 
