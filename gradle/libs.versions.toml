@@ -1,9 +1,9 @@
 [versions]
 activityComposeVersion = "1.8.2"
-agp = "8.13.2"
+agp = "9.0.0"
 composeBomVersion = "2024.01.00"
 coreKtxVersion = "1.12.0"
-kotlin = "2.0.0"
+kotlin = "2.2.10"
 coreKtx = "1.15.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
