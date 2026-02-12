@@ -118,96 +118,521 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         isDarkMode = isDarkMode,
                         onToggleDarkMode = { isDarkMode = !isDarkMode }
-                    ) { pageName, categories, beverages, osm, tm, crew, date ->
-                        exportToPdf(pageName, categories, beverages, osm, tm, crew, date)
+                    ) { pageName, categories, beverages, osm, tm, crew, date, cats200, cats201 ->
+                        exportToPdf(pageName, categories, beverages, osm, tm, crew, date, cats200, cats201)
                     }
                 }
             }
         }
     }
 
+    // ── PDF colours (Android int) ───────────────────────────────────
+    private val pdfOrange   = android.graphics.Color.parseColor("#FF6600")
+    private val pdfBlack    = android.graphics.Color.parseColor("#1A1A1A")
+    private val pdfWhite    = android.graphics.Color.WHITE
+    private val pdfLightGray= android.graphics.Color.parseColor("#F5F5F5")
+    private val pdfMidGray  = android.graphics.Color.parseColor("#CCCCCC")
+    private val pdfDarkGray = android.graphics.Color.parseColor("#4A4A4A")
+    private val pdfGreen    = android.graphics.Color.parseColor("#2E7D32")
+    private val pdfRed      = android.graphics.Color.parseColor("#C62828")
+    private val pdfAmber    = android.graphics.Color.parseColor("#F57F17")
+
+    private val PW = 1240f   // page width  (A4-ish portrait @ ~150dpi)
+    private val PH = 1754f   // page height
+    private val ML = 60f     // margin left
+    private val MR = 60f     // margin right
+    private val CW = PW - ML - MR  // content width
+
+    // ── helper: filled rectangle ────────────────────────────────────
+    private fun android.graphics.Canvas.fillRect(
+        l: Float, t: Float, r: Float, b: Float, color: Int
+    ) {
+        val p = Paint().also { it.color = color; it.style = Paint.Style.FILL }
+        drawRect(l, t, r, b, p)
+    }
+
+    // ── helper: stroked rectangle ───────────────────────────────────
+    private fun android.graphics.Canvas.strokeRect(
+        l: Float, t: Float, r: Float, b: Float, color: Int, stroke: Float = 1f
+    ) {
+        val p = Paint().also { it.color = color; it.style = Paint.Style.STROKE; it.strokeWidth = stroke }
+        drawRect(l, t, r, b, p)
+    }
+
+    // ── helper: draw text, return x+width ───────────────────────────
+    private fun android.graphics.Canvas.txt(
+        text: String, x: Float, y: Float, paint: Paint
+    ) = drawText(text, x, y, paint)
+
+    // ── build one branded page (returns canvas + finishes old one if needed)
+    private fun newPage(pdf: PdfDocument, num: Int): Pair<PdfDocument.Page, android.graphics.Canvas> {
+        val info = PdfDocument.PageInfo.Builder(PW.toInt(), PH.toInt(), num).create()
+        val page = pdf.startPage(info)
+        val c    = page.canvas
+        c.fillRect(0f, 0f, PW, PH, pdfWhite)
+        return page to c
+    }
+
+    // ── branded page header ─────────────────────────────────────────
+    private fun drawPageHeader(
+        canvas: android.graphics.Canvas,
+        title: String, subtitle: String,
+        osm: String, tm: String, crew: String, date: String,
+        pageNum: Int
+    ): Float {
+        // orange top bar
+        canvas.fillRect(0f, 0f, PW, 110f, pdfOrange)
+
+        // KR logo box
+        canvas.fillRect(ML, 15f, ML + 80f, 95f, android.graphics.Color.parseColor("#CC4400"))
+        val logoPaint = Paint().also { it.color = pdfWhite; it.textSize = 26f; it.isFakeBoldText = true; it.textAlign = Paint.Align.CENTER }
+        canvas.drawText("KR", ML + 40f, 65f, logoPaint)
+
+        // Title
+        val titlePaint = Paint().also { it.color = pdfWhite; it.textSize = 28f; it.isFakeBoldText = true }
+        canvas.drawText(title, ML + 95f, 52f, titlePaint)
+        val subPaint = Paint().also { it.color = android.graphics.Color.parseColor("#FFD0A0"); it.textSize = 14f }
+        canvas.drawText(subtitle, ML + 97f, 76f, subPaint)
+
+        // Page number
+        val pgPaint = Paint().also { it.color = pdfWhite; it.textSize = 12f; it.textAlign = Paint.Align.RIGHT }
+        canvas.drawText("Page $pageNum", PW - MR, 60f, pgPaint)
+
+        // Crew info strip (light orange)
+        canvas.fillRect(0f, 110f, PW, 148f, android.graphics.Color.parseColor("#FFF0E0"))
+        val crewPaint = Paint().also { it.color = pdfDarkGray; it.textSize = 13f }
+        val crewBold  = Paint().also { it.color = pdfOrange;   it.textSize = 13f; it.isFakeBoldText = true }
+        var cx = ML
+        listOf("OSM" to osm, "TM" to tm, "CREW" to crew, "DATE" to date).forEach { (lbl, v) ->
+            canvas.drawText("$lbl: ", cx, 135f, crewBold)
+            val lw = crewBold.measureText("$lbl: ")
+            canvas.drawText(v.ifEmpty { "—" }, cx + lw, 135f, crewPaint)
+            cx += CW / 4f
+        }
+
+        // thin divider line
+        canvas.fillRect(0f, 148f, PW, 150f, pdfOrange)
+        return 170f  // return Y start for content
+    }
+
+    // ── section heading band ────────────────────────────────────────
+    private fun drawSectionHeading(canvas: android.graphics.Canvas, title: String, y: Float): Float {
+        canvas.fillRect(ML, y, ML + CW, y + 32f, pdfBlack)
+        val p = Paint().also { it.color = pdfOrange; it.textSize = 14f; it.isFakeBoldText = true }
+        canvas.drawText(title, ML + 12f, y + 22f, p)
+        return y + 32f
+    }
+
+    // ── category sub-heading ────────────────────────────────────────
+    private fun drawCategoryHeading(canvas: android.graphics.Canvas, name: String, y: Float): Float {
+        canvas.fillRect(ML, y, ML + CW, y + 24f, pdfDarkGray)
+        val p = Paint().also { it.color = pdfWhite; it.textSize = 11f; it.isFakeBoldText = true }
+        canvas.drawText(name, ML + 10f, y + 17f, p)
+        return y + 24f
+    }
+
+    // ── food table column layout ─────────────────────────────────────
+    // col x positions (relative to ML):  product(0..330) + 7 data cols each 82px
+    private val foodCols = listOf(0f, 330f, 412f, 494f, 576f, 658f, 740f, 822f)
+    private val foodHdrs = listOf("PRODUCT", "CLOSE", "LOAD", "TOTAL", "SALES", "PRE", "WASTE", "END")
+
+    private fun drawFoodTableHeader(canvas: android.graphics.Canvas, y: Float): Float {
+        canvas.fillRect(ML, y, ML + CW, y + 28f, pdfOrange)
+        val p = Paint().also { it.color = pdfWhite; it.textSize = 10f; it.isFakeBoldText = true }
+        foodHdrs.forEachIndexed { i, hdr ->
+            val xa = ML + foodCols[i] + 4f
+            p.textAlign = if (i == 0) Paint.Align.LEFT else Paint.Align.CENTER
+            val cx = if (i == 0) xa else ML + foodCols[i] + (if (i < foodCols.lastIndex) (foodCols[i + 1] - foodCols[i]) / 2f else 51f)
+            canvas.drawText(hdr, if (i == 0) xa else cx, y + 19f, p)
+        }
+        return y + 28f
+    }
+
+    private fun drawFoodRow(canvas: android.graphics.Canvas, row: StockRow, y: Float, shaded: Boolean): Float {
+        val rowH = 22f
+        if (shaded) canvas.fillRect(ML, y, ML + CW, y + rowH, pdfLightGray)
+        canvas.strokeRect(ML, y, ML + CW, y + rowH, pdfMidGray, 0.5f)
+
+        val normal = Paint().also { it.color = pdfBlack; it.textSize = 10f }
+        val bold   = Paint().also { it.color = pdfOrange; it.textSize = 10f; it.isFakeBoldText = true }
+        val center = Paint().also { it.color = pdfDarkGray; it.textSize = 10f; it.textAlign = Paint.Align.CENTER }
+        val totalP = Paint().also { it.color = pdfOrange; it.textSize = 10f; it.isFakeBoldText = true; it.textAlign = Paint.Align.CENTER }
+
+        canvas.drawText(row.product, ML + 4f, y + 15f, normal)
+
+        val cells = listOf(row.closingPrev, row.loading, row.total, row.sales, row.prePurchase, row.waste, row.endDay)
+        cells.forEachIndexed { i, v ->
+            val colIdx = i + 1
+            val colX   = ML + foodCols[colIdx]
+            val colW   = if (colIdx < foodCols.lastIndex) foodCols[colIdx + 1] - foodCols[colIdx] else 82f
+            val cx     = colX + colW / 2f
+            // total col gets orange background
+            if (i == 2 && v.isNotEmpty()) {
+                canvas.fillRect(colX + 1f, y + 2f, colX + colW - 1f, y + rowH - 2f, android.graphics.Color.parseColor("#FFF0E0"))
+                canvas.drawText(v, cx, y + 15f, totalP)
+            } else {
+                canvas.drawText(v.ifEmpty { "—" }, cx, y + 15f, if (i == 2) totalP else center)
+            }
+            // vertical grid line
+            canvas.fillRect(colX, y, colX + 0.5f, y + rowH, pdfMidGray)
+        }
+        return y + rowH
+    }
+
+    // ── beverage table layout ────────────────────────────────────────
+    // product(0..190), par(190..248), cCafe(248..306), cAG(306..364),
+    // load(364..430), total(430..490), sales(490..553), pre(553..609),
+    // waste(609..665), eCafe(665..735), eAG(735..820)
+    private val bevCols = listOf(0f, 190f, 248f, 306f, 364f, 430f, 490f, 553f, 609f, 665f, 735f, 820f)
+
+    private fun drawBevTableHeader(canvas: android.graphics.Canvas, y: Float, serviceNumber: String): Float {
+        val closingDay = if (serviceNumber == "200") "201" else "200"
+        val loadLoc    = if (serviceNumber == "200") "WLG" else "AKL"
+        val wasteLoc   = if (serviceNumber == "200") "AKL" else "WLG"
+
+        // Row 1 – span headers
+        canvas.fillRect(ML, y, ML + CW, y + 26f, pdfOrange)
+        val p = Paint().also { it.color = pdfWhite; it.textSize = 8.5f; it.isFakeBoldText = true; it.textAlign = Paint.Align.CENTER }
+
+        fun colCx(a: Int, b: Int) = ML + (bevCols[a] + bevCols[b]) / 2f
+        canvas.drawText("PRODUCT", colCx(0, 1), y + 17f, p)
+        canvas.drawText("PAR", colCx(1, 2), y + 17f, p)
+        canvas.drawText("CLOSING $closingDay", colCx(2, 4), y + 10f, p)
+        canvas.drawText("CAFÉ / AG", colCx(2, 4), y + 21f, p)
+        canvas.drawText("LOAD\n$loadLoc", colCx(4, 5), y + 10f, p)
+        canvas.drawText("TOTAL", colCx(5, 6), y + 17f, p)
+        canvas.drawText("SALES", colCx(6, 7), y + 17f, p)
+        canvas.drawText("PRE", colCx(7, 8), y + 17f, p)
+        canvas.drawText("WASTE\n$wasteLoc", colCx(8, 9), y + 10f, p)
+        canvas.drawText("END CAFÉ", colCx(9, 10), y + 17f, p)
+        canvas.drawText("END AG", colCx(10, 11), y + 17f, p)
+        return y + 26f
+    }
+
+    private fun drawBevRow(canvas: android.graphics.Canvas, row: BeverageRow, y: Float, shaded: Boolean): Float {
+        val rowH = 22f
+        val endTotal = (row.endDayCafe.toIntOrNull() ?: 0) + (row.endDayAG.toIntOrNull() ?: 0)
+        val par      = row.parLevel.toIntOrNull() ?: 0
+        val isBelowPar = endTotal > 0 && par > 0 && endTotal < par
+
+        if (isBelowPar) canvas.fillRect(ML, y, ML + CW, y + rowH, android.graphics.Color.parseColor("#FFF3E0"))
+        else if (shaded) canvas.fillRect(ML, y, ML + CW, y + rowH, pdfLightGray)
+        canvas.strokeRect(ML, y, ML + CW, y + rowH, pdfMidGray, 0.5f)
+
+        val normal  = Paint().also { it.color = pdfBlack;   it.textSize = 9f }
+        val parPaint= Paint().also { it.color = if (isBelowPar) pdfRed else pdfDarkGray; it.textSize = 9f; it.textAlign = Paint.Align.CENTER; it.isFakeBoldText = isBelowPar }
+        val center  = Paint().also { it.color = pdfDarkGray; it.textSize = 9f; it.textAlign = Paint.Align.CENTER }
+        val totPaint= Paint().also { it.color = pdfOrange;   it.textSize = 9f; it.textAlign = Paint.Align.CENTER; it.isFakeBoldText = true }
+
+        fun colCx(a: Int) = ML + (bevCols[a] + bevCols[a + 1]) / 2f
+        canvas.drawText(row.product, ML + 3f, y + 15f, normal.also { it.textSize = 8.5f })
+        canvas.drawText(row.parLevel.ifEmpty { "—" }, colCx(1), y + 15f, parPaint)
+        canvas.drawText(row.closingCafe.ifEmpty { "—" }, colCx(2), y + 15f, center)
+        canvas.drawText(row.closingAG.ifEmpty { "—" },   colCx(3), y + 15f, center)
+        canvas.drawText(row.loading.ifEmpty { "—" },     colCx(4), y + 15f, center)
+        // total cell with tinted bg
+        val totalVal = ((row.closingCafe.toIntOrNull() ?: 0) + (row.closingAG.toIntOrNull() ?: 0) + (row.loading.toIntOrNull() ?: 0))
+        if (totalVal > 0) {
+            canvas.fillRect(ML + bevCols[5] + 1f, y + 2f, ML + bevCols[6] - 1f, y + rowH - 2f, android.graphics.Color.parseColor("#FFF0E0"))
+            canvas.drawText(totalVal.toString(), colCx(5), y + 15f, totPaint)
+        } else canvas.drawText("—", colCx(5), y + 15f, center)
+        canvas.drawText(row.sales.ifEmpty { "—" },       colCx(6), y + 15f, center)
+        canvas.drawText(row.prePurchase.ifEmpty { "—" }, colCx(7), y + 15f, center)
+        canvas.drawText(row.waste.ifEmpty { "—" },       colCx(8), y + 15f, center)
+        canvas.drawText(row.endDayCafe.ifEmpty { "—" }, colCx(9), y + 15f, center)
+        canvas.drawText(row.endDayAG.ifEmpty { "—" },   colCx(10), y + 15f, center)
+        if (isBelowPar) {
+            val w = Paint().also { it.color = pdfRed; it.textSize = 8f; it.textAlign = Paint.Align.RIGHT }
+            canvas.drawText("▼ LOW", ML + CW - 4f, y + 15f, w)
+        }
+        // vertical grid lines
+        (1..10).forEach { i -> canvas.fillRect(ML + bevCols[i], y, ML + bevCols[i] + 0.5f, y + rowH, pdfMidGray) }
+        return y + rowH
+    }
+
+    // ── footer line ─────────────────────────────────────────────────
+    private fun drawPageFooter(canvas: android.graphics.Canvas, generated: String) {
+        canvas.fillRect(0f, PH - 36f, PW, PH - 34f, pdfOrange)
+        val p = Paint().also { it.color = pdfDarkGray; it.textSize = 10f }
+        canvas.drawText("KiwiRail Café Stock Management  •  Generated: $generated", ML, PH - 14f, p)
+        val r = Paint().also { it.color = pdfDarkGray; it.textSize = 10f; it.textAlign = Paint.Align.RIGHT }
+        canvas.drawText("CONFIDENTIAL", PW - MR, PH - 14f, r)
+    }
+
+    // ── SALES PERFORMANCE REPORT page ───────────────────────────────
+    private fun drawSalesReportPage(
+        pdf: PdfDocument, pageNum: Int,
+        categories200: List<CategorySection>, categories201: List<CategorySection>,
+        osm: String, tm: String, crew: String, date: String,
+        generated: String
+    ) {
+        val (page, canvas) = newPage(pdf, pageNum)
+        var y = drawPageHeader(canvas, "End-of-Day Sales Performance", "Food & Beverage Coordinator Report", osm, tm, crew, date, pageNum)
+        drawPageFooter(canvas, generated)
+
+        // Merge sales across both services
+        data class SalesEntry(val product: String, val category: String, val s200: Int, val s201: Int)
+        val entries = mutableListOf<SalesEntry>()
+
+        categories200.forEachIndexed { ci, cat200 ->
+            val cat201 = categories201.getOrNull(ci)
+            cat200.rows.forEachIndexed { ri, row200 ->
+                val row201 = cat201?.rows?.getOrNull(ri)
+                val s200 = row200.sales.toIntOrNull() ?: 0
+                val s201 = row201?.sales?.toIntOrNull() ?: 0
+                entries.add(SalesEntry(row200.product, cat200.name, s200, s201))
+            }
+        }
+
+        val sorted = entries.sortedByDescending { it.s200 + it.s201 }
+        val maxTotal = sorted.firstOrNull()?.let { it.s200 + it.s201 } ?: 1
+
+        // ── Summary KPI strip ──
+        y = drawSectionHeading(canvas, "DAILY SALES SUMMARY", y) + 10f
+        val totalSales200 = entries.sumOf { it.s200 }
+        val totalSales201 = entries.sumOf { it.s201 }
+        val grandTotal    = totalSales200 + totalSales201
+        val topItem       = sorted.firstOrNull()?.product ?: "N/A"
+
+        // 4 KPI cards
+        data class Kpi(val label: String, val value: String, val sub: String, val color: Int)
+        val kpis = listOf(
+            Kpi("TOTAL UNITS SOLD", grandTotal.toString(), "Both services", pdfOrange),
+            Kpi("SERVICE 200 SALES", totalSales200.toString(), "WLG → AKL", pdfBlack),
+            Kpi("SERVICE 201 SALES", totalSales201.toString(), "AKL → WLG", pdfDarkGray),
+            Kpi("TOP SELLER", topItem.take(14), "Highest combined", pdfGreen)
+        )
+        val cardW = CW / 4f - 8f
+        kpis.forEachIndexed { i, kpi ->
+            val cx = ML + i * (cardW + 8f)
+            canvas.fillRect(cx, y, cx + cardW, y + 70f, pdfLightGray)
+            canvas.fillRect(cx, y, cx + cardW, y + 5f, kpi.color)   // colour top accent
+            val valP = Paint().also { it.color = kpi.color; it.textSize = 20f; it.isFakeBoldText = true; it.textAlign = Paint.Align.CENTER }
+            val lblP = Paint().also { it.color = pdfDarkGray; it.textSize = 9f; it.textAlign = Paint.Align.CENTER }
+            val subP = Paint().also { it.color = pdfDarkGray; it.textSize = 8f; it.textAlign = Paint.Align.CENTER }
+            canvas.drawText(kpi.value, cx + cardW / 2f, y + 40f, valP)
+            canvas.drawText(kpi.label, cx + cardW / 2f, y + 54f, lblP)
+            canvas.drawText(kpi.sub,   cx + cardW / 2f, y + 65f, subP)
+        }
+        y += 80f
+
+        // ── Rankings table ──
+        y = drawSectionHeading(canvas, "FOOD STOCK — SALES PERFORMANCE RANKING", y) + 6f
+
+        // Table header
+        canvas.fillRect(ML, y, ML + CW, y + 24f, pdfOrange)
+        val hP = Paint().also { it.color = pdfWhite; it.textSize = 9.5f; it.isFakeBoldText = true }
+        val cols = listOf(
+            "RANK" to 30f, "PRODUCT" to 220f, "CATEGORY" to 140f,
+            "SVC 200" to 80f, "SVC 201" to 80f, "TOTAL" to 80f, "BAR CHART" to 490f
+        )
+        var hx = ML + 4f
+        cols.forEach { (hdr, w) ->
+            val p2 = hP.also { it.textAlign = if (hdr == "PRODUCT" || hdr == "CATEGORY" || hdr == "BAR CHART") Paint.Align.LEFT else Paint.Align.CENTER }
+            canvas.drawText(hdr, if (hdr == "BAR CHART") hx + 4f else if (hP.textAlign == Paint.Align.CENTER) hx + w / 2f else hx + 4f, y + 16f, hP.also { it.textAlign = Paint.Align.LEFT })
+            hx += w
+        }
+        y += 24f
+
+        // Rows
+        sorted.forEachIndexed { idx, entry ->
+            if (y > PH - 80f) return@forEachIndexed  // guard overflow
+            val rowH   = 26f
+            val total  = entry.s200 + entry.s201
+            val shade  = idx % 2 == 1
+            if (shade) canvas.fillRect(ML, y, ML + CW, y + rowH, pdfLightGray)
+
+            // rank badge colour
+            val badgeColor = when (idx) {
+                0    -> android.graphics.Color.parseColor("#FFD700")  // gold
+                1    -> android.graphics.Color.parseColor("#C0C0C0")  // silver
+                2    -> android.graphics.Color.parseColor("#CD7F32")  // bronze
+                else -> pdfLightGray
+            }
+            canvas.fillRect(ML + 2f, y + 3f, ML + 28f, y + rowH - 3f, badgeColor)
+            val rankP = Paint().also { it.color = if (idx < 3) pdfWhite else pdfDarkGray; it.textSize = 10f; it.isFakeBoldText = true; it.textAlign = Paint.Align.CENTER }
+            canvas.drawText("${idx + 1}", ML + 15f, y + 18f, rankP)
+
+            val rowNorm = Paint().also { it.color = pdfBlack; it.textSize = 9.5f }
+            val rowCent = Paint().also { it.color = pdfDarkGray; it.textSize = 9.5f; it.textAlign = Paint.Align.CENTER }
+            val totPaint = Paint().also { it.color = pdfOrange; it.textSize = 10f; it.isFakeBoldText = true; it.textAlign = Paint.Align.CENTER }
+
+            canvas.drawText(entry.product,  ML + 34f, y + 18f, rowNorm)
+            canvas.drawText(entry.category, ML + 254f, y + 18f, rowNorm.also { it.color = pdfDarkGray; it.textSize = 8.5f })
+            canvas.drawText(entry.s200.toString(), ML + 378f + 40f, y + 18f, rowCent)
+            canvas.drawText(entry.s201.toString(), ML + 458f + 40f, y + 18f, rowCent)
+            canvas.drawText(total.toString(),      ML + 538f + 40f, y + 18f, totPaint)
+
+            // horizontal bar chart
+            val barX   = ML + 618f + 4f
+            val barMaxW = CW - 618f - 12f
+            val barH    = rowH - 8f
+
+            // background track
+            canvas.fillRect(barX, y + 4f, barX + barMaxW, y + 4f + barH, android.graphics.Color.parseColor("#EEEEEE"))
+
+            if (total > 0 && maxTotal > 0) {
+                val barW200 = (entry.s200.toFloat() / maxTotal) * barMaxW
+                val barW201 = (entry.s201.toFloat() / maxTotal) * barMaxW
+                // 200 bar (orange)
+                if (barW200 > 0) canvas.fillRect(barX, y + 4f, barX + barW200, y + 4f + barH / 2f, pdfOrange)
+                // 201 bar (dark)
+                if (barW201 > 0) canvas.fillRect(barX, y + 4f + barH / 2f, barX + barW201, y + 4f + barH, pdfBlack)
+            }
+
+            // row divider
+            canvas.fillRect(ML, y + rowH, ML + CW, y + rowH + 0.5f, pdfMidGray)
+            y += rowH
+        }
+
+        y += 16f
+
+        // Legend for bar chart
+        if (y < PH - 120f) {
+            val legP = Paint().also { it.color = pdfDarkGray; it.textSize = 9f }
+            canvas.fillRect(ML, y, ML + 14f, y + 10f, pdfOrange)
+            canvas.drawText("Service 200 (WLG→AKL)", ML + 18f, y + 10f, legP)
+            canvas.fillRect(ML + 170f, y, ML + 184f, y + 10f, pdfBlack)
+            canvas.drawText("Service 201 (AKL→WLG)", ML + 188f, y + 10f, legP)
+            y += 20f
+        }
+
+        // ── Category breakdown ──
+        if (y < PH - 180f) {
+            y = drawSectionHeading(canvas, "SALES BY CATEGORY", y + 8f) + 8f
+
+            val byCat = entries.groupBy { it.category }
+                .map { (cat, rows) -> cat to rows.sumOf { it.s200 + it.s201 } }
+                .sortedByDescending { it.second }
+
+            val catMaxW = CW - 200f
+            val catMax  = byCat.firstOrNull()?.second ?: 1
+
+            byCat.forEachIndexed { i, (cat, total2) ->
+                if (y > PH - 80f) return@forEachIndexed
+                val rh = 20f
+                if (i % 2 == 0) canvas.fillRect(ML, y, ML + CW, y + rh, pdfLightGray)
+                val cp  = Paint().also { it.color = pdfBlack;   it.textSize = 10f }
+                val nP  = Paint().also { it.color = pdfOrange;  it.textSize = 10f; it.isFakeBoldText = true; it.textAlign = Paint.Align.RIGHT }
+                canvas.drawText(cat,           ML + 4f,           y + 14f, cp)
+                canvas.drawText(total2.toString(), ML + 198f, y + 14f, nP)
+                // bar
+                val bw = if (catMax > 0) (total2.toFloat() / catMax) * catMaxW else 0f
+                canvas.fillRect(ML + 204f, y + 3f, ML + 204f + bw, y + rh - 3f, pdfOrange)
+                y += rh
+            }
+        }
+
+        pdf.finishPage(page)
+    }
+
+    // ── MAIN exportToPdf ─────────────────────────────────────────────
     private fun exportToPdf(
         pageName: String,
         categories: List<CategorySection>,
         beverages: List<BeverageSection>,
-        osm: String, tm: String, crew: String, date: String
+        osm: String, tm: String, crew: String, date: String,
+        // extra: for the combined report, pass both services' data
+        categories200: List<CategorySection> = categories,
+        categories201: List<CategorySection> = emptyList()
     ) {
         val pdf = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(1200, 2000, 1).create()
-        val page = pdf.startPage(pageInfo)
-        val canvas = page.canvas
-        val paint = Paint()
+        val generated = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+        val serviceNum = if (pageName.contains("200")) "200" else "201"
+        val docTitle   = if (serviceNum == "200") "Wellington → Auckland  (Service 200)" else "Auckland → Wellington  (Service 201)"
 
-        canvas.drawColor(android.graphics.Color.WHITE)
-        paint.textSize = 32f; paint.isFakeBoldText = true
-        paint.color = android.graphics.Color.parseColor("#FF6600")
-        canvas.drawText("$pageName CLOSING STOCK", 50f, 80f, paint)
+        var pageNum = 1
 
-        paint.textSize = 16f; paint.isFakeBoldText = false
-        paint.color = android.graphics.Color.BLACK
-        canvas.drawText("OSM: $osm",   50f,  110f, paint)
-        canvas.drawText("TM: $tm",    250f,  110f, paint)
-        canvas.drawText("CREW: $crew",450f,  110f, paint)
-        canvas.drawText("DATE: $date", 650f, 110f, paint)
+        // ────────────────────────────────────────────────────────────
+        // PAGE 1+  : Food Stock
+        // ────────────────────────────────────────────────────────────
+        var (page, canvas) = newPage(pdf, pageNum)
+        var y = drawPageHeader(canvas, docTitle, "FOOD STOCK — CLOSING SHEET", osm, tm, crew, date, pageNum)
+        drawPageFooter(canvas, generated)
 
-        var y = 150f
-        paint.textSize = 24f; paint.isFakeBoldText = true
-        paint.color = android.graphics.Color.BLACK
-        canvas.drawText("FOOD STOCK", 50f, y, paint); y += 30f
+        y = drawSectionHeading(canvas, "FOOD STOCK", y) + 4f
+        y = drawFoodTableHeader(canvas, y)
 
-        paint.textSize = 14f; paint.isFakeBoldText = true
-        paint.color = android.graphics.Color.parseColor("#FF6600")
-        canvas.drawText("PRODUCT",60f,y,paint); canvas.drawText("CLOSE",350f,y,paint)
-        canvas.drawText("LOAD",420f,y,paint);   canvas.drawText("TOTAL",490f,y,paint)
-        canvas.drawText("SALES",560f,y,paint);  canvas.drawText("PRE",630f,y,paint)
-        canvas.drawText("WASTE",700f,y,paint);  canvas.drawText("END",770f,y,paint); y += 20f
-
-        paint.textSize = 12f; paint.isFakeBoldText = false
-        paint.color = android.graphics.Color.BLACK
-        categories.forEach { cat ->
-            paint.textSize = 16f; paint.isFakeBoldText = true
-            canvas.drawText(cat.name, 50f, y, paint); y += 20f
-            paint.textSize = 12f; paint.isFakeBoldText = false
-            cat.rows.forEach { row ->
-                if (y > 1800f) return@forEach
-                canvas.drawText(row.product,60f,y,paint)
-                canvas.drawText(row.closingPrev,350f,y,paint); canvas.drawText(row.loading,420f,y,paint)
-                canvas.drawText(row.total,490f,y,paint);       canvas.drawText(row.sales,560f,y,paint)
-                canvas.drawText(row.prePurchase,630f,y,paint); canvas.drawText(row.waste,700f,y,paint)
-                canvas.drawText(row.endDay,770f,y,paint); y += 16f
-            }; y += 15f
+        var rowShade = false
+        categories.forEach { category ->
+            // check if we need a new page
+            if (y > PH - 80f) {
+                pdf.finishPage(page)
+                pageNum++
+                val np = newPage(pdf, pageNum)
+                page = np.first; canvas = np.second
+                y = drawPageHeader(canvas, docTitle, "FOOD STOCK — CLOSING SHEET (cont.)", osm, tm, crew, date, pageNum)
+                drawPageFooter(canvas, generated)
+                y = drawFoodTableHeader(canvas, y)
+            }
+            y = drawCategoryHeading(canvas, category.name, y)
+            rowShade = false
+            category.rows.forEach { row ->
+                if (y > PH - 60f) {
+                    pdf.finishPage(page)
+                    pageNum++
+                    val np = newPage(pdf, pageNum)
+                    page = np.first; canvas = np.second
+                    y = drawPageHeader(canvas, docTitle, "FOOD STOCK (cont.)", osm, tm, crew, date, pageNum)
+                    drawPageFooter(canvas, generated)
+                    y = drawFoodTableHeader(canvas, y)
+                    rowShade = false
+                }
+                y = drawFoodRow(canvas, row, y, rowShade)
+                rowShade = !rowShade
+            }
         }
-
-        y += 20f; paint.textSize = 24f; paint.isFakeBoldText = true
-        paint.color = android.graphics.Color.BLACK
-        canvas.drawText("RETAIL STOCK (CAFÉ & AG)", 50f, y, paint); y += 30f
-
-        paint.textSize = 14f; paint.isFakeBoldText = true
-        paint.color = android.graphics.Color.parseColor("#FF6600")
-        canvas.drawText("PRODUCT (PAR)",60f,y,paint); canvas.drawText("CLOSE CAFÉ",250f,y,paint)
-        canvas.drawText("CLOSE AG",320f,y,paint);     canvas.drawText("LOAD",390f,y,paint)
-        canvas.drawText("TOTAL",460f,y,paint);        canvas.drawText("SALES",530f,y,paint)
-        canvas.drawText("PRE",600f,y,paint);          canvas.drawText("WASTE",670f,y,paint)
-        canvas.drawText("END CAFÉ",740f,y,paint);     canvas.drawText("END AG",810f,y,paint); y += 20f
-
-        paint.textSize = 12f; paint.isFakeBoldText = false
-        paint.color = android.graphics.Color.BLACK
-        beverages.forEach { sec ->
-            paint.textSize = 16f; paint.isFakeBoldText = true
-            canvas.drawText(sec.name, 50f, y, paint); y += 20f
-            paint.textSize = 11f; paint.isFakeBoldText = false
-            sec.rows.forEach { row ->
-                if (y > 1800f) return@forEach
-                canvas.drawText("${row.product} (${row.parLevel})",60f,y,paint)
-                canvas.drawText(row.closingCafe,250f,y,paint); canvas.drawText(row.closingAG,320f,y,paint)
-                canvas.drawText(row.loading,390f,y,paint);     canvas.drawText(row.total,460f,y,paint)
-                canvas.drawText(row.sales,530f,y,paint);       canvas.drawText(row.prePurchase,600f,y,paint)
-                canvas.drawText(row.waste,670f,y,paint);       canvas.drawText(row.endDayCafe,740f,y,paint)
-                canvas.drawText(row.endDayAG,810f,y,paint); y += 16f
-            }; y += 12f
-        }
-
         pdf.finishPage(page)
+
+        // ────────────────────────────────────────────────────────────
+        // PAGE(s) : Retail Stock (Beverages)
+        // ────────────────────────────────────────────────────────────
+        pageNum++
+        var bp = newPage(pdf, pageNum)
+        page = bp.first; canvas = bp.second
+        y = drawPageHeader(canvas, docTitle, "RETAIL STOCK — CAFÉ & AG", osm, tm, crew, date, pageNum)
+        drawPageFooter(canvas, generated)
+
+        y = drawSectionHeading(canvas, "RETAIL STOCK (CAFÉ & AG)", y) + 4f
+        y = drawBevTableHeader(canvas, y, serviceNum)
+
+        rowShade = false
+        beverages.forEach { section ->
+            if (y > PH - 80f) {
+                pdf.finishPage(page)
+                pageNum++
+                val np = newPage(pdf, pageNum)
+                page = np.first; canvas = np.second
+                y = drawPageHeader(canvas, docTitle, "RETAIL STOCK (cont.)", osm, tm, crew, date, pageNum)
+                drawPageFooter(canvas, generated)
+                y = drawBevTableHeader(canvas, y, serviceNum)
+            }
+            y = drawCategoryHeading(canvas, section.name, y)
+            rowShade = false
+            section.rows.forEach { row ->
+                if (y > PH - 60f) {
+                    pdf.finishPage(page)
+                    pageNum++
+                    val np = newPage(pdf, pageNum)
+                    page = np.first; canvas = np.second
+                    y = drawPageHeader(canvas, docTitle, "RETAIL STOCK (cont.)", osm, tm, crew, date, pageNum)
+                    drawPageFooter(canvas, generated)
+                    y = drawBevTableHeader(canvas, y, serviceNum)
+                    rowShade = false
+                }
+                y = drawBevRow(canvas, row, y, rowShade)
+                rowShade = !rowShade
+            }
+        }
+        pdf.finishPage(page)
+
+        // ────────────────────────────────────────────────────────────
+        // LAST PAGE : Sales Performance Report
+        // ────────────────────────────────────────────────────────────
+        pageNum++
+        drawSalesReportPage(pdf, pageNum, categories200, categories201, osm, tm, crew, date, generated)
+
+        // ── Save & share ─────────────────────────────────────────────
         val fileName = "${pageName}_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.pdf"
         val file = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName)
         pdf.writeTo(FileOutputStream(file)); pdf.close()
@@ -233,7 +658,7 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     isDarkMode: Boolean,
     onToggleDarkMode: () -> Unit,
-    onExportPdf: (String, List<CategorySection>, List<BeverageSection>, String, String, String, String) -> Unit
+    onExportPdf: (String, List<CategorySection>, List<BeverageSection>, String, String, String, String, List<CategorySection>, List<CategorySection>) -> Unit
 ) {
     var selectedTrip by remember { mutableStateOf<String?>(null) }
     val sheet200    = remember { getFoodCategories() }
@@ -261,7 +686,10 @@ fun MainScreen(
                 clearTrigger = clearTrigger,
                 // FIX 1: Clear also resets osm/tm/crew text
                 onClearAll = { osm = ""; tm = ""; crew = ""; clearTrigger++ },
-                onBack = { selectedTrip = null }, onExportPdf = onExportPdf,
+                onBack = { selectedTrip = null },
+                onExportPdf = { pn, cats, bevs, o, t, c, d ->
+                    onExportPdf(pn, cats, bevs, o, t, c, d, sheet200, sheet201)
+                },
                 onTransferTotals = {
                     sheet200.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
                         if (row.endDay.isNotEmpty()) sheet201[ci].rows[ri].closingPrev = row.endDay
@@ -293,7 +721,10 @@ fun MainScreen(
                 clearTrigger = clearTrigger,
                 // FIX 1: Clear also resets osm/tm/crew text
                 onClearAll = { osm = ""; tm = ""; crew = ""; clearTrigger++ },
-                onBack = { selectedTrip = null }, onExportPdf = onExportPdf,
+                onBack = { selectedTrip = null },
+                onExportPdf = { pn, cats, bevs, o, t, c, d ->
+                    onExportPdf(pn, cats, bevs, o, t, c, d, sheet200, sheet201)
+                },
                 onTransferTotals = {
                     sheet201.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
                         if (row.endDay.isNotEmpty()) sheet200[ci].rows[ri].closingPrev = row.endDay
