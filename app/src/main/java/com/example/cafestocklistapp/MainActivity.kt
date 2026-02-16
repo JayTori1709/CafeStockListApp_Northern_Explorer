@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.core.content.FileProvider
 import com.example.cafestocklistapp.ui.theme.CafeStockListAppTheme
 import kotlinx.coroutines.delay
@@ -85,7 +87,7 @@ data class StockRow(
 
 data class CategorySection(
     var name: String,
-    val rows: MutableList<StockRow>
+    val rows: SnapshotStateList<StockRow>
 )
 
 data class BeverageRow(
@@ -105,7 +107,7 @@ data class BeverageRow(
 
 data class BeverageSection(
     var name: String,
-    val rows: MutableList<BeverageRow>
+    val rows: SnapshotStateList<BeverageRow>
 )
 
 /* ==================== AUTOSAVE MANAGER ====================
@@ -1405,7 +1407,10 @@ fun DraggableStockRow(
                     onDragCancel = { isDragging = false; acc = 0f },
                     onDrag = { change, dragAmount ->
                         change.consume(); acc += dragAmount.y
-                        when { acc < -30f -> { onMoveUp();   acc = 0f }; acc > 30f -> { onMoveDown(); acc = 0f } }
+                        when {
+                            acc < -50f -> { onMoveUp();   acc = 0f }
+                            acc >  50f -> { onMoveDown(); acc = 0f }
+                        }
                     }
                 )
             }
@@ -1534,52 +1539,52 @@ fun TinyNumericField(value: String, modifier: Modifier = Modifier, clearTrigger:
 
 /* ==================== DATA ==================== */
 
-fun getFoodCategories(): MutableList<CategorySection> = mutableListOf(
-    CategorySection("BREAKFAST", mutableListOf(
+fun getFoodCategories(): SnapshotStateList<CategorySection> = mutableStateListOf(
+    CategorySection("BREAKFAST", mutableStateListOf(
         StockRow(product = "Growers Breakfast"), StockRow(product = "Breakfast Croissant"),
         StockRow(product = "Big Breakfast"),     StockRow(product = "Pancakes"),
         StockRow(product = "Chia Seeds"),        StockRow(product = "Fruit Salads")
     )),
-    CategorySection("SWEETS", mutableListOf(
+    CategorySection("SWEETS", mutableStateListOf(
         StockRow(product = "Brownie Slices"),           StockRow(product = "Cookie Time Biscuits"),
         StockRow(product = "Cookie Time GF Biscuits"),  StockRow(product = "Carrot Cake"),
         StockRow(product = "ANZAC Biscuits"),           StockRow(product = "Blueberry Muffins"),
         StockRow(product = "Cheese Scones")
     )),
-    CategorySection("SALADS", mutableListOf(
+    CategorySection("SALADS", mutableStateListOf(
         StockRow(product = "Leafy Salad"), StockRow(product = "Smoked Chicken Pasta Salad")
     )),
-    CategorySection("SANDWICHES AND WRAP", mutableListOf(
+    CategorySection("SANDWICHES AND WRAP", mutableStateListOf(
         StockRow(product = "BLT"),         StockRow(product = "Chicken Wrap"),
         StockRow(product = "Beef Pickle"), StockRow(product = "Ham and Cheese Toastie")
     )),
-    CategorySection("HOT MEALS", mutableListOf(
+    CategorySection("HOT MEALS", mutableStateListOf(
         StockRow(product = "Mac & Cheese"), StockRow(product = "Lasagne"),
         StockRow(product = "Roast Chicken"), StockRow(product = "Lamb Shank"),
         StockRow(product = "Beef Cheek")
     )),
-    CategorySection("PIES", mutableListOf(
+    CategorySection("PIES", mutableStateListOf(
         StockRow(product = "Steak and Cheese"), StockRow(product = "Vegetarian")
     )),
-    CategorySection("SWEET AND ICE CREAM", mutableListOf(
+    CategorySection("SWEET AND ICE CREAM", mutableStateListOf(
         StockRow(product = "KAPITI BOYSENBERRY"),    StockRow(product = "KAPITI PASSIONFRUIT"),
         StockRow(product = "KAPITI CHOCOLATE CUPS"), StockRow(product = "MEMPHIS BIK BIKKIE")
     )),
-    CategorySection("CHEESEBOARD", mutableListOf(StockRow(product = "Cheeseboard")))
+    CategorySection("CHEESEBOARD", mutableStateListOf(StockRow(product = "Cheeseboard")))
 )
 
-fun getBeverageCategories(): MutableList<BeverageSection> = mutableListOf(
-    BeverageSection("SNACKS", mutableListOf(
+fun getBeverageCategories(): SnapshotStateList<BeverageSection> = mutableStateListOf(
+    BeverageSection("SNACKS", mutableStateListOf(
         BeverageRow(product = "Whittakers White Choc", parLevel = "48"),
         BeverageRow(product = "Whittakers Brown Choc", parLevel = "48"),
         BeverageRow(product = "ETA Nuts",              parLevel = "24")
     )),
-    BeverageSection("PROPER CHIPS", mutableListOf(
+    BeverageSection("PROPER CHIPS", mutableStateListOf(
         BeverageRow(product = "Sea Salt",      parLevel = "18"),
         BeverageRow(product = "Cider Vinegar", parLevel = "18"),
         BeverageRow(product = "Garden Medly",  parLevel = "18")
     )),
-    BeverageSection("BEERS", mutableListOf(
+    BeverageSection("BEERS", mutableStateListOf(
         BeverageRow(product = "Steinlager Ultra",     parLevel = "24"),
         BeverageRow(product = "Duncans Pilsner",      parLevel = "12"),
         BeverageRow(product = "Ruapehu Stout",        parLevel = "12"),
@@ -1588,20 +1593,20 @@ fun getBeverageCategories(): MutableList<BeverageSection> = mutableListOf(
         BeverageRow(product = "Panhead Supercharger", parLevel = "12"),
         BeverageRow(product = "Sawmill Nimble",       parLevel = "12")
     )),
-    BeverageSection("PRE MIXES", mutableListOf(
+    BeverageSection("PRE MIXES", mutableStateListOf(
         BeverageRow(product = "Pals Vodka",        parLevel = "10"),
         BeverageRow(product = "Scapegrace Gin",    parLevel = "12"),
         BeverageRow(product = "Coruba Rum & Cola", parLevel = "12"),
         BeverageRow(product = "Apple Cider",       parLevel = "12"),
         BeverageRow(product = "AF Apero Spirtz",   parLevel = "12")
     )),
-    BeverageSection("WINES", mutableListOf(
+    BeverageSection("WINES", mutableStateListOf(
         BeverageRow(product = "Joiy the Gryphon 250ml", parLevel = "24"),
         BeverageRow(product = "The Ned Sav 250ml",      parLevel = "24"),
         BeverageRow(product = "Matahiwi Cuvee 250ml",   parLevel = "24"),
         BeverageRow(product = "Summer Love 250ml",      parLevel = "24")
     )),
-    BeverageSection("SOFT DRINKS", mutableListOf(
+    BeverageSection("SOFT DRINKS", mutableStateListOf(
         BeverageRow(product = "H2go Water 750ml",      parLevel = "12"),
         BeverageRow(product = "NZ SP Water 500ml",     parLevel = "18"),
         BeverageRow(product = "Bundaberg Lemon Lime",  parLevel = "10"),
@@ -1612,7 +1617,7 @@ fun getBeverageCategories(): MutableList<BeverageSection> = mutableListOf(
         BeverageRow(product = "McCoy Orange Juice",    parLevel = "15"),
         BeverageRow(product = "Boss Coffee",           parLevel = "6")
     )),
-    BeverageSection("750 ML WINE", mutableListOf(
+    BeverageSection("750 ML WINE", mutableStateListOf(
         BeverageRow(product = "Hunters 750ml",              parLevel = "6"),
         BeverageRow(product = "Kumeru Pinot Gris 750ml",    parLevel = "6"),
         BeverageRow(product = "Dog Point Sav 750ml",        parLevel = "6"),
