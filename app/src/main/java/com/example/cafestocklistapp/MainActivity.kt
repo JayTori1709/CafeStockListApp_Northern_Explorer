@@ -9,7 +9,16 @@ import android.os.Bundle
 import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,6 +44,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -1379,9 +1389,88 @@ fun DraggableStockRow(
     onMoveUp: () -> Unit, onMoveDown: () -> Unit,
     onFieldChanged: () -> Unit
 ) {
-    var isDragging by remember { mutableStateOf(false) }
-    val scaleAnim by animateFloatAsState(if (isDragging) 1.04f else 1f, animationSpec = tween(150))
+    val view    = LocalView.current
+    val context = LocalContext.current
 
+    // ── Drag state ──────────────────────────────────────────────────────────
+    var isDragging   by remember { mutableStateOf(false) }
+    // justPlaced = true for a brief window right after a swap fires — drives the flash
+    var justPlaced   by remember { mutableStateOf(false) }
+
+    // ── Animated properties ─────────────────────────────────────────────────
+    // Scale: springs to 1.07 on pickup, snaps back with a slight overshoot on release
+    val scale by animateFloatAsState(
+        targetValue = if (isDragging) 1.07f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness    = Spring.StiffnessMedium
+        ),
+        label = "dragScale"
+    )
+
+    // Elevation shadow: floats up to 10dp while dragging
+    val elevation by animateDpAsState(
+        targetValue  = if (isDragging) 10.dp else 0.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness    = Spring.StiffnessMedium
+        ),
+        label = "dragElevation"
+    )
+
+    // Border width: thickens while dragging
+    val borderWidth by animateDpAsState(
+        targetValue   = if (isDragging) 2.5.dp else 0.5.dp,
+        animationSpec = tween(durationMillis = 180),
+        label         = "borderWidth"
+    )
+
+    // Border colour: orange while dragging, green flash on place, then normal
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isDragging  -> KiwiRailOrange
+            justPlaced  -> KiwiRailGreen
+            else        -> RowBorderNormal
+        },
+        animationSpec = tween(
+            durationMillis = if (justPlaced && !isDragging) 600 else 150,
+            easing         = FastOutSlowInEasing
+        ),
+        label = "borderColor"
+    )
+
+    // Background: warm tint while dragging, green tint flash on place
+    val bgColor by animateColorAsState(
+        targetValue = when {
+            isDragging -> KiwiRailOrange.copy(alpha = 0.10f)
+            justPlaced -> KiwiRailGreen.copy(alpha  = 0.08f)
+            else       -> RowBackground
+        },
+        animationSpec = tween(
+            durationMillis = if (justPlaced && !isDragging) 700 else 160,
+            easing         = FastOutSlowInEasing
+        ),
+        label = "bgColor"
+    )
+
+    // Dim the drag handle slightly when not dragging so it doesn't clutter
+    val handleAlpha by animateFloatAsState(
+        targetValue   = if (isDragging) 1f else 0.45f,
+        animationSpec = tween(200),
+        label         = "handleAlpha"
+    )
+
+    // ── justPlaced auto-clear ───────────────────────────────────────────────
+    // After a swap the flash stays visible for 700 ms then fades out naturally
+    // via the animateColorAsState above. We just need to flip justPlaced back.
+    LaunchedEffect(justPlaced) {
+        if (justPlaced) {
+            delay(700)
+            justPlaced = false
+        }
+    }
+
+    // ── Field state ─────────────────────────────────────────────────────────
     var closeValue by remember(clearTrigger, row.closingPrev) { mutableStateOf(row.closingPrev) }
     var loadValue  by remember(clearTrigger, row.loading)     { mutableStateOf(row.loading) }
 
@@ -1394,49 +1483,98 @@ fun DraggableStockRow(
     }
     row.total = calculatedTotal
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().scale(scaleAnim)
-            .background(if (isDragging) KiwiRailOrange.copy(alpha = 0.08f) else RowBackground)
-            .border(if (isDragging) 2.dp else 0.5.dp, if (isDragging) KiwiRailOrange else RowBorderNormal)
+    // ── Haptic helpers ──────────────────────────────────────────────────────
+    // pickup: strong confirming click — user feels the row "detach"
+    val hapticPickup: () -> Unit = {
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    }
+    // swap: lighter tick — user feels each position change
+    val hapticSwap: () -> Unit = {
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    // ── Render ──────────────────────────────────────────────────────────────
+    Card(
+        modifier  = Modifier
+            .fillMaxWidth()
+            .scale(scale)
             .pointerInput(row.id) {
                 var acc = 0f
                 detectDragGesturesAfterLongPress(
-                    onDragStart  = { isDragging = true;  acc = 0f },
-                    onDragEnd    = { isDragging = false; acc = 0f },
-                    onDragCancel = { isDragging = false; acc = 0f },
+                    onDragStart = {
+                        isDragging = true
+                        acc        = 0f
+                        hapticPickup()       // feel the row lift
+                    },
+                    onDragEnd = {
+                        isDragging = false
+                        acc        = 0f
+                        justPlaced = true    // trigger flash
+                        hapticSwap()         // feel the row land
+                    },
+                    onDragCancel = {
+                        isDragging = false
+                        acc        = 0f
+                    },
                     onDrag = { change, dragAmount ->
-                        change.consume(); acc += dragAmount.y
+                        change.consume()
+                        acc += dragAmount.y
                         when {
-                            acc < -50f -> { onMoveUp();   acc = 0f }
-                            acc >  50f -> { onMoveDown(); acc = 0f }
+                            acc < -50f -> {
+                                onMoveUp()
+                                acc = 0f
+                                hapticSwap()    // feel each position change
+                            }
+                            acc > 50f -> {
+                                onMoveDown()
+                                acc = 0f
+                                hapticSwap()    // feel each position change
+                            }
                         }
                     }
                 )
-            }
-            .padding(vertical = 6.dp, horizontal = 8.dp)
+            },
+        shape     = RoundedCornerShape(6.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = elevation),
+        colors    = CardDefaults.cardColors(containerColor = bgColor),
+        border    = androidx.compose.foundation.BorderStroke(borderWidth, borderColor)
     ) {
-        Row(modifier = Modifier.weight(2.8f), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.DragHandle, "Drag", modifier = Modifier.size(16.dp).alpha(if (isDragging) 1f else 0.45f), tint = KiwiRailOrange)
-            Spacer(Modifier.width(4.dp))
-            Text(row.product, fontSize = 11.sp, color = RowTextColor)
-        }
-        CompactNumericField(closeValue, Modifier.weight(1f), clearTrigger) { closeValue = it; row.closingPrev = it; onFieldChanged() }
-        CompactNumericField(loadValue,  Modifier.weight(1f), clearTrigger) { loadValue  = it; row.loading     = it; onFieldChanged() }
-        Box(
-            modifier = Modifier.weight(1f).padding(horizontal = 2.dp).height(36.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (calculatedTotal.isNotEmpty()) KiwiRailOrange.copy(alpha = 0.12f) else Color(0xFFF0F0F0))
-                .border(1.dp, if (calculatedTotal.isNotEmpty()) KiwiRailOrange.copy(alpha = 0.4f) else Color(0xFFDDDDDD), RoundedCornerShape(6.dp)),
-            contentAlignment = Alignment.Center
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp, horizontal = 8.dp)
         ) {
-            Text(calculatedTotal, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                color = if (calculatedTotal.isNotEmpty()) KiwiRailOrange else Color.Gray)
+            Row(modifier = Modifier.weight(2.8f), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.DragHandle, "Drag",
+                    modifier = Modifier.size(16.dp).alpha(handleAlpha),
+                    tint = if (isDragging) KiwiRailOrange else KiwiRailDarkGray
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    row.product, fontSize = 11.sp,
+                    color    = RowTextColor,
+                    fontWeight = if (isDragging) FontWeight.Bold else FontWeight.Normal
+                )
+            }
+            CompactNumericField(closeValue, Modifier.weight(1f), clearTrigger) { closeValue = it; row.closingPrev = it; onFieldChanged() }
+            CompactNumericField(loadValue,  Modifier.weight(1f), clearTrigger) { loadValue  = it; row.loading     = it; onFieldChanged() }
+            Box(
+                modifier = Modifier.weight(1f).padding(horizontal = 2.dp).height(36.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (calculatedTotal.isNotEmpty()) KiwiRailOrange.copy(alpha = 0.12f) else Color(0xFFF0F0F0))
+                    .border(1.dp, if (calculatedTotal.isNotEmpty()) KiwiRailOrange.copy(alpha = 0.4f) else Color(0xFFDDDDDD), RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(calculatedTotal, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    color = if (calculatedTotal.isNotEmpty()) KiwiRailOrange else Color.Gray)
+            }
+            CompactNumericField(row.sales,       Modifier.weight(1f), clearTrigger) { row.sales       = it; onFieldChanged() }
+            CompactNumericField(row.prePurchase, Modifier.weight(1f), clearTrigger) { row.prePurchase = it; onFieldChanged() }
+            CompactNumericField(row.waste,       Modifier.weight(1f), clearTrigger) { row.waste       = it; onFieldChanged() }
+            CompactNumericField(row.endDay,      Modifier.weight(1f), clearTrigger) { row.endDay      = it; onFieldChanged() }
         }
-        CompactNumericField(row.sales,       Modifier.weight(1f), clearTrigger) { row.sales       = it; onFieldChanged() }
-        CompactNumericField(row.prePurchase, Modifier.weight(1f), clearTrigger) { row.prePurchase = it; onFieldChanged() }
-        CompactNumericField(row.waste,       Modifier.weight(1f), clearTrigger) { row.waste       = it; onFieldChanged() }
-        CompactNumericField(row.endDay,      Modifier.weight(1f), clearTrigger) { row.endDay      = it; onFieldChanged() }
     }
 }
 
