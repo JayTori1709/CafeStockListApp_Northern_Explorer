@@ -314,11 +314,179 @@ object SaveManager {
             .getString(KEY_SAVED_AT, null)
 }
 
+/* ==================== SHEET ARCHIVE ====================
+ *
+ * Stores completed sheet snapshots so staff can browse past runs.
+ * Up to MAX_PER_SERVICE entries per service; oldest dropped automatically.
+ * Stored in a separate SharedPreferences file so it's never accidentally
+ * cleared by the autosave Clear All action.
+ *
+ *  SheetArchive.save(context, sheet)   → archive a completed sheet
+ *  SheetArchive.list(context, "200")   → get all archived sheets for svc 200
+ *  SheetArchive.delete(context, id)    → delete one entry
+ */
+object SheetArchive {
+
+    private const val PREFS_NAME        = "kiwirail_archive"
+    private const val MAX_PER_SERVICE   = 30
+
+    // ── Serialise helpers (reuse SaveManager's JSON approach) ─────────
+
+    private fun stockRowToJson(r: StockRow) = JSONObject().apply {
+        put("product", r.product); put("closingPrev", r.closingPrev)
+        put("loading", r.loading); put("total", r.total)
+        put("sales", r.sales);     put("prePurchase", r.prePurchase)
+        put("waste", r.waste);     put("endDay", r.endDay)
+    }
+    private fun categoryToJson(c: CategorySection) = JSONObject().apply {
+        put("name", c.name)
+        put("rows", JSONArray().also { a -> c.rows.forEach { a.put(stockRowToJson(it)) } })
+    }
+    private fun bevRowToJson(r: BeverageRow) = JSONObject().apply {
+        put("product", r.product);         put("parLevel", r.parLevel)
+        put("closingCafe", r.closingCafe); put("closingAG", r.closingAG)
+        put("loading", r.loading);         put("total", r.total)
+        put("sales", r.sales);             put("prePurchase", r.prePurchase)
+        put("waste", r.waste);             put("endDayCafe", r.endDayCafe)
+        put("endDayAG", r.endDayAG)
+    }
+    private fun bevSectionToJson(s: BeverageSection) = JSONObject().apply {
+        put("name", s.name)
+        put("rows", JSONArray().also { a -> s.rows.forEach { a.put(bevRowToJson(it)) } })
+    }
+
+    private fun sheetToJson(s: SavedSheet) = JSONObject().apply {
+        put("id", s.id); put("serviceNumber", s.serviceNumber)
+        put("osm", s.osm); put("tm", s.tm); put("crew", s.crew)
+        put("date", s.date); put("savedAt", s.savedAt)
+        put("food", JSONArray().also { a -> s.food.forEach { a.put(categoryToJson(it)) } })
+        put("beverages", JSONArray().also { a -> s.beverages.forEach { a.put(bevSectionToJson(it)) } })
+    }
+
+    // ── Deserialise helpers ────────────────────────────────────────────
+
+    private fun jsonToStockRow(j: JSONObject) = StockRow(
+        product = j.optString("product", ""),
+        closingPrev = j.optString("closingPrev", ""), loading = j.optString("loading", ""),
+        total = j.optString("total", ""), sales = j.optString("sales", ""),
+        prePurchase = j.optString("prePurchase", ""), waste = j.optString("waste", ""),
+        endDay = j.optString("endDay", "")
+    )
+    private fun jsonToCategory(j: JSONObject): CategorySection {
+        val rows = mutableStateListOf<StockRow>()
+        val arr = j.getJSONArray("rows")
+        for (i in 0 until arr.length()) rows.add(jsonToStockRow(arr.getJSONObject(i)))
+        return CategorySection(j.optString("name", ""), rows)
+    }
+    private fun jsonToBevRow(j: JSONObject) = BeverageRow(
+        product = j.optString("product", ""), parLevel = j.optString("parLevel", ""),
+        closingCafe = j.optString("closingCafe", ""), closingAG = j.optString("closingAG", ""),
+        loading = j.optString("loading", ""), total = j.optString("total", ""),
+        sales = j.optString("sales", ""), prePurchase = j.optString("prePurchase", ""),
+        waste = j.optString("waste", ""), endDayCafe = j.optString("endDayCafe", ""),
+        endDayAG = j.optString("endDayAG", "")
+    )
+    private fun jsonToBevSection(j: JSONObject): BeverageSection {
+        val rows = mutableStateListOf<BeverageRow>()
+        val arr = j.getJSONArray("rows")
+        for (i in 0 until arr.length()) rows.add(jsonToBevRow(arr.getJSONObject(i)))
+        return BeverageSection(j.optString("name", ""), rows)
+    }
+    private fun jsonToSheet(j: JSONObject): SavedSheet {
+        val foodList   = mutableListOf<CategorySection>()
+        val foodArr    = j.getJSONArray("food")
+        for (i in 0 until foodArr.length()) foodList.add(jsonToCategory(foodArr.getJSONObject(i)))
+        val bevList    = mutableListOf<BeverageSection>()
+        val bevArr     = j.getJSONArray("beverages")
+        for (i in 0 until bevArr.length()) bevList.add(jsonToBevSection(bevArr.getJSONObject(i)))
+        return SavedSheet(
+            id = j.optString("id", UUID.randomUUID().toString()),
+            serviceNumber = j.optString("serviceNumber", "200"),
+            osm = j.optString("osm", ""), tm = j.optString("tm", ""),
+            crew = j.optString("crew", ""), date = j.optString("date", ""),
+            savedAt = j.optString("savedAt", ""),
+            food = foodList, beverages = bevList
+        )
+    }
+
+    // ── Public API ─────────────────────────────────────────────────────
+
+    /** Archive a completed sheet. Drops the oldest if over limit. */
+    fun save(context: Context, sheet: SavedSheet) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val svc   = sheet.serviceNumber
+        val existing = listRaw(prefs, svc).toMutableList()
+        existing.add(0, sheetToJson(sheet).toString())   // newest first
+        // Trim to max
+        val trimmed = if (existing.size > MAX_PER_SERVICE) existing.take(MAX_PER_SERVICE) else existing
+        prefs.edit().apply {
+            putInt("count_$svc", trimmed.size)
+            trimmed.forEachIndexed { i, json -> putString("entry_${svc}_$i", json) }
+            // Clear stale slots if list shrank
+            for (i in trimmed.size until MAX_PER_SERVICE) remove("entry_${svc}_$i")
+            apply()
+        }
+    }
+
+    /** Return all archived sheets for a service, newest first. */
+    fun list(context: Context, serviceNumber: String): List<SavedSheet> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return listRaw(prefs, serviceNumber).mapNotNull { json ->
+            try { jsonToSheet(JSONObject(json)) } catch (_: Exception) { null }
+        }
+    }
+
+    /** Delete one archived sheet by id. */
+    fun delete(context: Context, serviceNumber: String, id: String) {
+        val prefs    = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val filtered = listRaw(prefs, serviceNumber)
+            .filter { json ->
+                try { JSONObject(json).optString("id") != id } catch (_: Exception) { true }
+            }
+        prefs.edit().apply {
+            putInt("count_$serviceNumber", filtered.size)
+            filtered.forEachIndexed { i, json -> putString("entry_${serviceNumber}_$i", json) }
+            for (i in filtered.size until MAX_PER_SERVICE) remove("entry_${serviceNumber}_$i")
+            apply()
+        }
+    }
+
+    private fun listRaw(prefs: android.content.SharedPreferences, svc: String): List<String> {
+        val count = prefs.getInt("count_$svc", 0)
+        return (0 until count).mapNotNull { i -> prefs.getString("entry_${svc}_$i", null) }
+    }
+}
+
 data class SavedCrewInfo(
     val osm200: String, val tm200: String, val crew200: String, val date200: String,
     val osm201: String, val tm201: String, val crew201: String, val date201: String,
     val savedAt: String
 )
+
+/* ==================== SHEET ARCHIVE DATA MODEL ====================
+ * A complete frozen snapshot of one service's sheet, stored in the archive.
+ */
+data class SavedSheet(
+    val id: String = UUID.randomUUID().toString(),
+    val serviceNumber: String,        // "200" or "201"
+    val osm: String,
+    val tm: String,
+    val crew: String,
+    val date: String,
+    val savedAt: String,              // full timestamp e.g. "17/02/26 14:35"
+    val food: List<CategorySection>,  // frozen copies
+    val beverages: List<BeverageSection>
+)
+
+/* Navigation state — single source of truth for which screen is visible */
+sealed class AppScreen {
+    object Home : AppScreen()
+    data class Trip(val serviceNumber: String) : AppScreen()
+    object PastSheetsHub : AppScreen()
+    data class PastSheetsList(val serviceNumber: String) : AppScreen()
+    data class PastSheetViewer(val sheet: SavedSheet) : AppScreen()
+    data class PastSheetEditor(val sheet: SavedSheet) : AppScreen()
+}
 
 /* ==================== MAIN ACTIVITY ==================== */
 
@@ -641,7 +809,6 @@ fun MainScreen(
     var showRestoredBanner by remember { mutableStateOf(false) }
 
     // ── RESTORE on first composition ───────────────────────────────────
-    // Runs once: fills sheets and crew fields from SharedPreferences.
     LaunchedEffect(Unit) {
         val saved = SaveManager.restore(context, sheet200, beverages200, sheet201, beverages201)
         if (saved != null) {
@@ -657,9 +824,6 @@ fun MainScreen(
     }
 
     // ── DEBOUNCED AUTOSAVE ─────────────────────────────────────────────
-    // Any time crew fields or a saveVersion counter changes, wait 1.5 s of
-    // inactivity then write to SharedPreferences.  Field edits bump saveVersion
-    // via the StockSheet callbacks; direct crew-field changes trigger directly.
     var saveVersion by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(
@@ -667,7 +831,7 @@ fun MainScreen(
         osm201, tm201, crew201, date201,
         saveVersion
     ) {
-        delay(1500)  // debounce: wait for user to pause typing
+        delay(1500)
         SaveManager.save(
             context,
             osm200, tm200, crew200, date200, sheet200, beverages200,
@@ -676,120 +840,700 @@ fun MainScreen(
         lastSavedTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
     }
 
-    var selectedTrip by remember { mutableStateOf<String?>(null) }
+    // ── Navigation state ───────────────────────────────────────────────
+    var screen by remember { mutableStateOf<AppScreen>(AppScreen.Home) }
     var clearTrigger200 by remember { mutableIntStateOf(0) }
     var clearTrigger201 by remember { mutableIntStateOf(0) }
 
-    // ── Restored data banner ────────────────────────────────────────────
-    if (showRestoredBanner) {
-        Box(
-            Modifier.fillMaxSize(),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            // Shown briefly as a snackbar-style banner
-        }
+    // Helper: snapshot current live sheets into an archive entry
+    fun snapshotAndArchive(serviceNumber: String, osm: String, tm: String, crew: String, date: String) {
+        val food = if (serviceNumber == "200") sheet200 else sheet201
+        val bevs = if (serviceNumber == "200") beverages200 else beverages201
+        val snapshot = SavedSheet(
+            serviceNumber = serviceNumber, osm = osm, tm = tm, crew = crew, date = date,
+            savedAt = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault()).format(Date()),
+            food = food.map { cat ->
+                CategorySection(cat.name, cat.rows.map { it.copy() }.toMutableStateList())
+            },
+            beverages = bevs.map { sec ->
+                BeverageSection(sec.name, sec.rows.map { it.copy() }.toMutableStateList())
+            }
+        )
+        SheetArchive.save(context, snapshot)
     }
 
-    when (selectedTrip) {
-        null -> TripSelectionScreen(
+    when (val s = screen) {
+        is AppScreen.Home -> TripSelectionScreen(
             isDarkMode = isDarkMode,
             onToggleDarkMode = onToggleDarkMode,
             lastSavedTime = lastSavedTime,
-            showRestoredBanner = showRestoredBanner
-        ) { selectedTrip = it }
+            showRestoredBanner = showRestoredBanner,
+            onTripSelected = { screen = AppScreen.Trip(it) },
+            onViewPastSheets = { screen = AppScreen.PastSheetsHub }
+        )
 
-        "200" -> StockSheet(
-            pageName = "WLG-AKL-200",
-            displayTitle = "Wellington → Auckland",
-            serviceNumber = "200",
-            foodCategories = sheet200,
-            beverageCategories = beverages200,
-            osm = osm200, tm = tm200, crew = crew200, date = date200,
-            onOsmChange  = { osm200  = it },
-            onTmChange   = { tm200   = it },
-            onCrewChange = { crew200 = it },
-            onDateChange = { date200 = it },
+        is AppScreen.PastSheetsHub -> PastSheetsHubScreen(
             isDarkMode = isDarkMode,
-            onToggleDarkMode = onToggleDarkMode,
-            clearTrigger = clearTrigger200,
-            lastSavedTime = lastSavedTime,
-            onFieldChanged = { saveVersion++ },  // bump to trigger debounced save
-            onClearAll = {
-                sheet200.forEach { cat -> cat.rows.forEach { row ->
-                    row.closingPrev = ""; row.loading = ""; row.total = ""
-                    row.sales = ""; row.prePurchase = ""; row.waste = ""; row.endDay = ""
-                }}
-                beverages200.forEach { cat -> cat.rows.forEach { row ->
-                    row.closingCafe = ""; row.closingAG = ""; row.loading = ""; row.total = ""
-                    row.sales = ""; row.prePurchase = ""; row.waste = ""; row.endDayCafe = ""; row.endDayAG = ""
-                }}
-                osm200 = ""; tm200 = ""; crew200 = ""
-                date200 = SimpleDateFormat("dd/MM/yy", Locale.getDefault()).format(Date())
-                SaveManager.clear(context)
-                lastSavedTime = ""
-                clearTrigger200++
+            onBack = { screen = AppScreen.Home },
+            onServiceSelected = { svc -> screen = AppScreen.PastSheetsList(svc) }
+        )
+
+        is AppScreen.PastSheetsList -> PastSheetsListScreen(
+            isDarkMode = isDarkMode,
+            serviceNumber = s.serviceNumber,
+            onBack = { screen = AppScreen.PastSheetsHub },
+            onView   = { sheet -> screen = AppScreen.PastSheetViewer(sheet) },
+            onExportPdf = { sheet ->
+                onExportPdf(
+                    if (sheet.serviceNumber == "200") "WLG-AKL-200" else "AKL-WLG-201",
+                    sheet.food, sheet.beverages,
+                    sheet.osm, sheet.tm, sheet.crew, sheet.date,
+                    sheet.food, emptyList()
+                )
             },
-            onBack = { selectedTrip = null },
-            onExportPdf = { pn, cats, bevs, o, t, c, d ->
-                onExportPdf(pn, cats, bevs, o, t, c, d, sheet200, sheet201)
-            },
-            onTransferTotals = {
-                sheet200.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
-                    if (row.endDay.isNotEmpty()) sheet201[ci].rows[ri].closingPrev = row.endDay
-                }}
-                beverages200.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
-                    if (row.endDayCafe.isNotEmpty()) beverages201[ci].rows[ri].closingCafe = row.endDayCafe
-                    if (row.endDayAG.isNotEmpty())   beverages201[ci].rows[ri].closingAG   = row.endDayAG
-                }}
-                saveVersion++
+            onEdit   = { sheet -> screen = AppScreen.PastSheetEditor(sheet) }
+        )
+
+        is AppScreen.PastSheetViewer -> PastSheetViewerScreen(
+            isDarkMode = isDarkMode,
+            sheet = s.sheet,
+            onBack = { screen = AppScreen.PastSheetsList(s.sheet.serviceNumber) },
+            onExportPdf = { sheet ->
+                onExportPdf(
+                    if (sheet.serviceNumber == "200") "WLG-AKL-200" else "AKL-WLG-201",
+                    sheet.food, sheet.beverages,
+                    sheet.osm, sheet.tm, sheet.crew, sheet.date,
+                    sheet.food, emptyList()
+                )
             }
         )
 
-        "201" -> StockSheet(
-            pageName = "AKL-WLG-201",
-            displayTitle = "Auckland → Wellington",
-            serviceNumber = "201",
-            foodCategories = sheet201,
-            beverageCategories = beverages201,
-            osm = osm201, tm = tm201, crew = crew201, date = date201,
-            onOsmChange  = { osm201  = it },
-            onTmChange   = { tm201   = it },
-            onCrewChange = { crew201 = it },
-            onDateChange = { date201 = it },
-            isDarkMode = isDarkMode,
-            onToggleDarkMode = onToggleDarkMode,
-            clearTrigger = clearTrigger201,
-            lastSavedTime = lastSavedTime,
-            onFieldChanged = { saveVersion++ },
-            onClearAll = {
-                sheet201.forEach { cat -> cat.rows.forEach { row ->
-                    row.closingPrev = ""; row.loading = ""; row.total = ""
-                    row.sales = ""; row.prePurchase = ""; row.waste = ""; row.endDay = ""
-                }}
-                beverages201.forEach { cat -> cat.rows.forEach { row ->
-                    row.closingCafe = ""; row.closingAG = ""; row.loading = ""; row.total = ""
-                    row.sales = ""; row.prePurchase = ""; row.waste = ""; row.endDayCafe = ""; row.endDayAG = ""
-                }}
-                osm201 = ""; tm201 = ""; crew201 = ""
-                date201 = SimpleDateFormat("dd/MM/yy", Locale.getDefault()).format(Date())
-                SaveManager.clear(context)
-                lastSavedTime = ""
-                clearTrigger201++
-            },
-            onBack = { selectedTrip = null },
-            onExportPdf = { pn, cats, bevs, o, t, c, d ->
-                onExportPdf(pn, cats, bevs, o, t, c, d, sheet200, sheet201)
-            },
-            onTransferTotals = {
-                sheet201.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
-                    if (row.endDay.isNotEmpty()) sheet200[ci].rows[ri].closingPrev = row.endDay
-                }}
-                beverages201.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
-                    if (row.endDayCafe.isNotEmpty()) beverages200[ci].rows[ri].closingCafe = row.endDayCafe
-                    if (row.endDayAG.isNotEmpty())   beverages200[ci].rows[ri].closingAG   = row.endDayAG
-                }}
-                saveVersion++
+        is AppScreen.PastSheetEditor -> {
+            // Load the archived sheet into a live editable StockSheet
+            val editorFood = remember(s.sheet.id) {
+                s.sheet.food.map { cat ->
+                    CategorySection(cat.name, cat.rows.map { it.copy() }.toMutableStateList())
+                }.toMutableStateList()
             }
+            val editorBevs = remember(s.sheet.id) {
+                s.sheet.beverages.map { sec ->
+                    BeverageSection(sec.name, sec.rows.map { it.copy() }.toMutableStateList())
+                }.toMutableStateList()
+            }
+            var editorOsm  by remember(s.sheet.id) { mutableStateOf(s.sheet.osm) }
+            var editorTm   by remember(s.sheet.id) { mutableStateOf(s.sheet.tm) }
+            var editorCrew by remember(s.sheet.id) { mutableStateOf(s.sheet.crew) }
+            var editorDate by remember(s.sheet.id) { mutableStateOf(s.sheet.date) }
+            var editorClearTrigger by remember(s.sheet.id) { mutableIntStateOf(0) }
+
+            StockSheet(
+                pageName = if (s.sheet.serviceNumber == "200") "WLG-AKL-200" else "AKL-WLG-201",
+                displayTitle = if (s.sheet.serviceNumber == "200") "Wellington → Auckland" else "Auckland → Wellington",
+                serviceNumber = s.sheet.serviceNumber,
+                foodCategories = editorFood,
+                beverageCategories = editorBevs,
+                osm = editorOsm, tm = editorTm, crew = editorCrew, date = editorDate,
+                onOsmChange  = { editorOsm  = it },
+                onTmChange   = { editorTm   = it },
+                onCrewChange = { editorCrew = it },
+                onDateChange = { editorDate = it },
+                isDarkMode = isDarkMode,
+                onToggleDarkMode = onToggleDarkMode,
+                clearTrigger = editorClearTrigger,
+                lastSavedTime = "",
+                onFieldChanged = {},
+                onClearAll = { editorClearTrigger++ },
+                onBack = { screen = AppScreen.PastSheetsList(s.sheet.serviceNumber) },
+                onExportPdf = { pn, cats, bevs, o, t, c, d ->
+                    // Save edited version as new archive entry
+                    val updated = SavedSheet(
+                        id = s.sheet.id,
+                        serviceNumber = s.sheet.serviceNumber,
+                        osm = o, tm = t, crew = c, date = d,
+                        savedAt = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault()).format(Date()),
+                        food = cats, beverages = bevs
+                    )
+                    SheetArchive.save(context, updated)
+                    onExportPdf(pn, cats, bevs, o, t, c, d, cats, emptyList())
+                },
+                onTransferTotals = {}
+            )
+        }
+
+        is AppScreen.Trip -> {
+            val svcNum = s.serviceNumber
+            val localFood = if (svcNum == "200") sheet200 else sheet201
+            val localBevs = if (svcNum == "200") beverages200 else beverages201
+            var localOsm  by remember(svcNum) { mutableStateOf(if (svcNum == "200") osm200  else osm201)  }
+            var localTm   by remember(svcNum) { mutableStateOf(if (svcNum == "200") tm200   else tm201)   }
+            var localCrew by remember(svcNum) { mutableStateOf(if (svcNum == "200") crew200 else crew201) }
+            var localDate by remember(svcNum) { mutableStateOf(if (svcNum == "200") date200 else date201) }
+
+            // Keep MainScreen crew state in sync
+            LaunchedEffect(localOsm, localTm, localCrew, localDate) {
+                if (svcNum == "200") { osm200 = localOsm; tm200 = localTm; crew200 = localCrew; date200 = localDate }
+                else                 { osm201 = localOsm; tm201 = localTm; crew201 = localCrew; date201 = localDate }
+            }
+
+            val clearTrigger = if (svcNum == "200") clearTrigger200 else clearTrigger201
+
+            StockSheet(
+                pageName = if (svcNum == "200") "WLG-AKL-200" else "AKL-WLG-201",
+                displayTitle = if (svcNum == "200") "Wellington → Auckland" else "Auckland → Wellington",
+                serviceNumber = svcNum,
+                foodCategories = localFood,
+                beverageCategories = localBevs,
+                osm = localOsm, tm = localTm, crew = localCrew, date = localDate,
+                onOsmChange  = { localOsm  = it },
+                onTmChange   = { localTm   = it },
+                onCrewChange = { localCrew = it },
+                onDateChange = { localDate = it },
+                isDarkMode = isDarkMode,
+                onToggleDarkMode = onToggleDarkMode,
+                clearTrigger = clearTrigger,
+                lastSavedTime = lastSavedTime,
+                onFieldChanged = { saveVersion++ },
+                onClearAll = {
+                    localFood.forEach { cat -> cat.rows.forEach { row ->
+                        row.closingPrev = ""; row.loading = ""; row.total = ""
+                        row.sales = ""; row.prePurchase = ""; row.waste = ""; row.endDay = ""
+                    }}
+                    localBevs.forEach { cat -> cat.rows.forEach { row ->
+                        row.closingCafe = ""; row.closingAG = ""; row.loading = ""; row.total = ""
+                        row.sales = ""; row.prePurchase = ""; row.waste = ""; row.endDayCafe = ""; row.endDayAG = ""
+                    }}
+                    localOsm = ""; localTm = ""; localCrew = ""
+                    localDate = SimpleDateFormat("dd/MM/yy", Locale.getDefault()).format(Date())
+                    SaveManager.clear(context); lastSavedTime = ""
+                    if (svcNum == "200") clearTrigger200++ else clearTrigger201++
+                },
+                onBack = { screen = AppScreen.Home },
+                onExportPdf = { pn, cats, bevs, o, t, c, d ->
+                    // Archive a snapshot when exporting
+                    snapshotAndArchive(svcNum, o, t, c, d)
+                    onExportPdf(pn, cats, bevs, o, t, c, d, sheet200, sheet201)
+                },
+                onTransferTotals = {
+                    if (svcNum == "200") {
+                        sheet200.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
+                            if (row.endDay.isNotEmpty()) sheet201[ci].rows[ri].closingPrev = row.endDay
+                        }}
+                        beverages200.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
+                            if (row.endDayCafe.isNotEmpty()) beverages201[ci].rows[ri].closingCafe = row.endDayCafe
+                            if (row.endDayAG.isNotEmpty())   beverages201[ci].rows[ri].closingAG   = row.endDayAG
+                        }}
+                    } else {
+                        sheet201.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
+                            if (row.endDay.isNotEmpty()) sheet200[ci].rows[ri].closingPrev = row.endDay
+                        }}
+                        beverages201.forEachIndexed { ci, cat -> cat.rows.forEachIndexed { ri, row ->
+                            if (row.endDayCafe.isNotEmpty()) beverages200[ci].rows[ri].closingCafe = row.endDayCafe
+                            if (row.endDayAG.isNotEmpty())   beverages200[ci].rows[ri].closingAG   = row.endDayAG
+                        }}
+                    }
+                    saveVersion++
+                }
+            )
+        }
+    }
+}
+
+
+/* ==================== PAST SHEETS HUB ==================== */
+
+@Composable
+fun PastSheetsHubScreen(
+    isDarkMode: Boolean,
+    onBack: () -> Unit,
+    onServiceSelected: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val count200 = remember { SheetArchive.list(context, "200").size }
+    val count201 = remember { SheetArchive.list(context, "201").size }
+    val bg = if (isDarkMode) KiwiRailBlack else KiwiRailLightGray
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(bg).verticalScroll(rememberScrollState())
+    ) {
+        // Header
+        Box(modifier = Modifier.fillMaxWidth()
+            .background(Brush.linearGradient(listOf(KiwiRailBlack, KiwiRailDarkGray)))
+            .padding(horizontal = 20.dp, vertical = 24.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, "Back", tint = KiwiRailOrange)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Past Sheets", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = KiwiRailWhite)
+                        Text("Browse archived stock sheets", fontSize = 13.sp, color = KiwiRailLightGray)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(28.dp))
+
+        Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+            Text("Select Service", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray,
+                modifier = Modifier.padding(bottom = 16.dp))
+
+            ArchiveServiceCard(
+                title = "Wellington → Auckland",
+                subtitle = "Service 200",
+                count = count200,
+                accentColor = KiwiRailOrange,
+                isDarkMode = isDarkMode
+            ) { onServiceSelected("200") }
+
+            Spacer(Modifier.height(16.dp))
+
+            ArchiveServiceCard(
+                title = "Auckland → Wellington",
+                subtitle = "Service 201",
+                count = count201,
+                accentColor = KiwiRailInfo,
+                isDarkMode = isDarkMode
+            ) { onServiceSelected("201") }
+
+            Spacer(Modifier.height(32.dp))
+
+            if (count200 == 0 && count201 == 0) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Filled.FolderOpen, null,
+                            modifier = Modifier.size(48.dp).alpha(0.4f), tint = KiwiRailOrange)
+                        Spacer(Modifier.height(12.dp))
+                        Text("No sheets archived yet", fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                            color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray)
+                        Text("Sheets are automatically saved when you export a PDF",
+                            fontSize = 12.sp, textAlign = TextAlign.Center,
+                            color = if (isDarkMode) KiwiRailDarkGray else Color(0xFF999999),
+                            modifier = Modifier.padding(top = 6.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ArchiveServiceCard(
+    title: String, subtitle: String, count: Int,
+    accentColor: Color, isDarkMode: Boolean, onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                    .background(accentColor.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Description, null, tint = accentColor, modifier = Modifier.size(24.dp))
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(subtitle, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = accentColor)
+                Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack,
+                    modifier = Modifier.padding(vertical = 2.dp))
+                Text(
+                    if (count == 0) "No saved sheets" else "$count sheet${if (count == 1) "" else "s"} saved",
+                    fontSize = 12.sp,
+                    color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray
+                )
+            }
+            Icon(Icons.Filled.ChevronRight, "Open", tint = accentColor, modifier = Modifier.size(24.dp))
+        }
+    }
+}
+
+/* ==================== PAST SHEETS LIST ==================== */
+
+@Composable
+fun PastSheetsListScreen(
+    isDarkMode: Boolean,
+    serviceNumber: String,
+    onBack: () -> Unit,
+    onView: (SavedSheet) -> Unit,
+    onExportPdf: (SavedSheet) -> Unit,
+    onEdit: (SavedSheet) -> Unit
+) {
+    val context = LocalContext.current
+    var sheets by remember { mutableStateOf(SheetArchive.list(context, serviceNumber)) }
+    var deleteTarget by remember { mutableStateOf<SavedSheet?>(null) }
+
+    val title = if (serviceNumber == "200") "Wellington → Auckland" else "Auckland → Wellington"
+    val accentColor = if (serviceNumber == "200") KiwiRailOrange else KiwiRailInfo
+    val bg = if (isDarkMode) KiwiRailBlack else KiwiRailLightGray
+
+    Column(modifier = Modifier.fillMaxSize().background(bg)) {
+        // Header
+        Box(modifier = Modifier.fillMaxWidth()
+            .background(Brush.linearGradient(listOf(KiwiRailBlack, KiwiRailDarkGray)))
+            .padding(horizontal = 8.dp, vertical = 16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Filled.ArrowBack, "Back", tint = KiwiRailOrange)
+                }
+                Spacer(Modifier.width(4.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = KiwiRailWhite)
+                    Text("Service $serviceNumber  •  ${sheets.size} sheet${if (sheets.size == 1) "" else "s"}",
+                        fontSize = 12.sp, color = KiwiRailLightGray)
+                }
+            }
+        }
+
+        if (sheets.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+                    Icon(Icons.Filled.Inbox, null, modifier = Modifier.size(64.dp).alpha(0.35f), tint = accentColor)
+                    Spacer(Modifier.height(16.dp))
+                    Text("No sheets yet", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                        color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray)
+                    Text("Export a PDF to automatically save a sheet here",
+                        fontSize = 13.sp, textAlign = TextAlign.Center,
+                        color = if (isDarkMode) KiwiRailDarkGray else Color(0xFF999999),
+                        modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp)) {
+                sheets.forEach { sheet ->
+                    PastSheetCard(
+                        sheet = sheet,
+                        accentColor = accentColor,
+                        isDarkMode = isDarkMode,
+                        onView   = { onView(sheet) },
+                        onExport = { onExportPdf(sheet) },
+                        onEdit   = { onEdit(sheet) },
+                        onDelete = { deleteTarget = sheet }
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+
+    // Delete confirmation dialog
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete Sheet?", fontWeight = FontWeight.Bold, color = KiwiRailRed) },
+            text = { Text("Remove the sheet from ${target.date} (${target.osm})? This cannot be undone.") },
+            confirmButton = {
+                Button(onClick = {
+                    SheetArchive.delete(context, serviceNumber, target.id)
+                    sheets = SheetArchive.list(context, serviceNumber)
+                    deleteTarget = null
+                }, colors = ButtonDefaults.buttonColors(containerColor = KiwiRailRed)) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text("Cancel", color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack)
+                }
+            },
+            containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+}
+
+@Composable
+fun PastSheetCard(
+    sheet: SavedSheet, accentColor: Color, isDarkMode: Boolean,
+    onView: () -> Unit, onExport: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit
+) {
+    val totalFood = sheet.food.sumOf { it.rows.size }
+    val totalBev  = sheet.beverages.sumOf { it.rows.size }
+    val doneFood  = sheet.food.sumOf { cat -> cat.rows.count { it.endDay.isNotEmpty() } }
+    val doneBev   = sheet.beverages.sumOf { cat -> cat.rows.count { it.endDayCafe.isNotEmpty() || it.endDayAG.isNotEmpty() } }
+    val pct = if (totalFood + totalBev > 0) ((doneFood + doneBev) * 100) / (totalFood + totalBev) else 0
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            // Top row — date badge + crew + delete
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                        .background(accentColor.copy(alpha = 0.13f)).padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(sheet.date, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = accentColor)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(sheet.osm.ifEmpty { "—" }, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                        color = if (isDarkMode) KiwiRailWhite else KiwiRailBlack)
+                    Text("TM: ${sheet.tm.ifEmpty { "—" }}  •  Crew: ${sheet.crew.ifEmpty { "—" }}",
+                        fontSize = 11.sp, color = if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray)
+                }
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Filled.DeleteOutline, "Delete", tint = KiwiRailRed.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp))
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = if (isDarkMode) Color(0xFF3A3A3A) else Color(0xFFEEEEEE))
+            Spacer(Modifier.height(10.dp))
+
+            // Stats row
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                MiniStat("Completion", "$pct%", accentColor)
+                MiniStat("Food", "$doneFood/$totalFood", if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray)
+                MiniStat("Retail", "$doneBev/$totalBev", if (isDarkMode) KiwiRailLightGray else KiwiRailDarkGray)
+                MiniStat("Saved", sheet.savedAt.takeLast(5), if (isDarkMode) KiwiRailDarkGray else Color(0xFFAAAAAA))
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // Action buttons
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // View In App
+                OutlinedButton(
+                    onClick = onView,
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = accentColor),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, accentColor),
+                    contentPadding = PaddingValues(horizontal = 6.dp)
+                ) {
+                    Icon(Icons.Filled.Visibility, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("View", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                // View PDF
+                OutlinedButton(
+                    onClick = onExport,
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = KiwiRailRed),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, KiwiRailRed),
+                    contentPadding = PaddingValues(horizontal = 6.dp)
+                ) {
+                    Icon(Icons.Filled.PictureAsPdf, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                // Edit
+                Button(
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = KiwiRailBlack, contentColor = KiwiRailWhite),
+                    contentPadding = PaddingValues(horizontal = 6.dp)
+                ) {
+                    Icon(Icons.Filled.Edit, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Edit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MiniStat(label: String, value: String, valueColor: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = valueColor)
+        Text(label, fontSize = 10.sp, color = Color(0xFF999999))
+    }
+}
+
+/* ==================== PAST SHEET VIEWER ==================== */
+
+@Composable
+fun PastSheetViewerScreen(
+    isDarkMode: Boolean,
+    sheet: SavedSheet,
+    onBack: () -> Unit,
+    onExportPdf: (SavedSheet) -> Unit
+) {
+    val serviceTitle = if (sheet.serviceNumber == "200") "Wellington → Auckland" else "Auckland → Wellington"
+    val accentColor  = if (sheet.serviceNumber == "200") KiwiRailOrange else KiwiRailInfo
+    val bg = if (isDarkMode) KiwiRailBlack else KiwiRailLightGray
+
+    Column(modifier = Modifier.fillMaxSize().background(bg)) {
+        // Header
+        Box(modifier = Modifier.fillMaxWidth()
+            .background(Brush.linearGradient(listOf(KiwiRailBlack, KiwiRailDarkGray)))
+            .padding(horizontal = 8.dp, vertical = 16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Filled.ArrowBack, "Back", tint = KiwiRailOrange)
+                }
+                Spacer(Modifier.width(4.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(serviceTitle, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = KiwiRailWhite)
+                    Text("${sheet.date}  •  OSM: ${sheet.osm}  •  Saved ${sheet.savedAt}",
+                        fontSize = 11.sp, color = KiwiRailLightGray)
+                }
+                IconButton(onClick = { onExportPdf(sheet) }) {
+                    Icon(Icons.Filled.PictureAsPdf, "Export PDF", tint = KiwiRailRed, modifier = Modifier.size(22.dp))
+                }
+            }
+        }
+
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 12.dp)) {
+
+            // Crew card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = if (isDarkMode) KiwiRailDarkGray else KiwiRailWhite)
+            ) {
+                Row(modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly) {
+                    CrewStatChip("OSM",  sheet.osm,  accentColor)
+                    CrewStatChip("TM",   sheet.tm,   accentColor)
+                    CrewStatChip("CREW", sheet.crew, accentColor)
+                    CrewStatChip("DATE", sheet.date, accentColor)
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // Food section
+            ViewerSectionHeader("FOOD STOCK", Icons.Filled.Restaurant, accentColor)
+            Spacer(Modifier.height(8.dp))
+
+            sheet.food.forEach { category ->
+                ViewerCategoryHeader(category.name, isDarkMode)
+                category.rows.forEach { row ->
+                    ViewerFoodRow(row, isDarkMode)
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // Retail section
+            ViewerSectionHeader("RETAIL STOCK", Icons.Filled.LocalBar, accentColor)
+            Spacer(Modifier.height(8.dp))
+
+            sheet.beverages.forEach { section ->
+                ViewerCategoryHeader(section.name, isDarkMode)
+                section.rows.forEach { row ->
+                    ViewerBevRow(row, isDarkMode)
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+fun CrewStatChip(label: String, value: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, fontSize = 10.sp, color = color, fontWeight = FontWeight.Bold)
+        Text(value.ifEmpty { "—" }, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+            color = color)
+    }
+}
+
+@Composable
+fun ViewerSectionHeader(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, accentColor: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp))
+            .background(accentColor.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = accentColor, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = accentColor)
+    }
+}
+
+@Composable
+fun ViewerCategoryHeader(name: String, isDarkMode: Boolean) {
+    Box(modifier = Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+        .background(KiwiRailBlack).padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Text(name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = KiwiRailWhite)
+    }
+}
+
+@Composable
+fun ViewerFoodRow(row: StockRow, isDarkMode: Boolean) {
+    val hasData = row.endDay.isNotEmpty()
+    Row(modifier = Modifier.fillMaxWidth()
+        .background(if (isDarkMode) Color(0xFF2A2A2A) else KiwiRailWhite)
+        .border(0.5.dp, RowBorderNormal).padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(row.product, fontSize = 11.sp, color = RowTextColor, modifier = Modifier.weight(2.5f))
+        ViewerCell("Close", row.closingPrev, Modifier.weight(1f))
+        ViewerCell("Load",  row.loading,     Modifier.weight(1f))
+        ViewerCell("Sales", row.sales,       Modifier.weight(1f))
+        ViewerCell("End",   row.endDay,      Modifier.weight(1f), highlight = hasData)
+    }
+}
+
+@Composable
+fun ViewerBevRow(row: BeverageRow, isDarkMode: Boolean) {
+    val endTotal = (row.endDayCafe.toIntOrNull() ?: 0) + (row.endDayAG.toIntOrNull() ?: 0)
+    val par = row.parLevel.toIntOrNull() ?: 0
+    val isBelowPar = endTotal > 0 && par > 0 && endTotal < par
+    Row(modifier = Modifier.fillMaxWidth()
+        .background(if (isBelowPar) KiwiRailOrange.copy(alpha = 0.07f) else if (isDarkMode) Color(0xFF2A2A2A) else KiwiRailWhite)
+        .border(if (isBelowPar) 1.dp else 0.5.dp, if (isBelowPar) KiwiRailOrange else RowBorderNormal)
+        .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(2f)) {
+            Text(row.product, fontSize = 10.sp, color = RowTextColor, lineHeight = 11.sp)
+            Text("PAR ${row.parLevel}", fontSize = 9.sp,
+                color = if (isBelowPar) KiwiRailOrange else KiwiRailInfo, fontWeight = FontWeight.Bold)
+        }
+        ViewerCell("Café", row.closingCafe, Modifier.weight(0.8f))
+        ViewerCell("AG",   row.closingAG,   Modifier.weight(0.8f))
+        ViewerCell("Load", row.loading,     Modifier.weight(0.8f))
+        ViewerCell("Sales",row.sales,       Modifier.weight(0.8f))
+        ViewerCell("End C",row.endDayCafe,  Modifier.weight(0.9f), highlight = row.endDayCafe.isNotEmpty())
+        ViewerCell("End AG",row.endDayAG,   Modifier.weight(0.9f), highlight = row.endDayAG.isNotEmpty())
+    }
+}
+
+@Composable
+fun ViewerCell(label: String, value: String, modifier: Modifier, highlight: Boolean = false) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, fontSize = 8.sp, color = Color(0xFF999999))
+        Text(
+            value.ifEmpty { "—" },
+            fontSize = 11.sp,
+            fontWeight = if (highlight) FontWeight.Bold else FontWeight.Normal,
+            color = if (highlight) KiwiRailOrange else Color(0xFF888888),
+            textAlign = TextAlign.Center
         )
     }
 }
@@ -802,7 +1546,8 @@ fun TripSelectionScreen(
     onToggleDarkMode: () -> Unit,
     lastSavedTime: String,
     showRestoredBanner: Boolean,
-    onTripSelected: (String) -> Unit
+    onTripSelected: (String) -> Unit,
+    onViewPastSheets: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize().background(if (isDarkMode) KiwiRailBlack else KiwiRailLightGray)) {
         Column(
@@ -859,7 +1604,22 @@ fun TripSelectionScreen(
             ServiceCard("Wellington → Auckland", "Service 200", "Departs 07:45", isDarkMode) { onTripSelected("200") }
             Spacer(Modifier.height(20.dp))
             ServiceCard("Auckland → Wellington", "Service 201", "Departs 08:45", isDarkMode) { onTripSelected("201") }
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(20.dp))
+
+            // ── View Past Sheets ───────────────────────────────────────
+            OutlinedButton(
+                onClick = onViewPastSheets,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = KiwiRailOrange),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, KiwiRailOrange)
+            ) {
+                Icon(Icons.Filled.History, null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("View Past Sheets", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(Modifier.height(32.dp))
             Text("Select a service to begin stock count", fontSize = 12.sp, fontStyle = FontStyle.Italic,
                 color = if (isDarkMode) KiwiRailDarkGray else Color.Gray)
         }
