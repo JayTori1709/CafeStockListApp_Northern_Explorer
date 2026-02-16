@@ -884,6 +884,7 @@ fun MainScreen(
             onBack = { screen = AppScreen.PastSheetsHub },
             onView   = { sheet -> screen = AppScreen.PastSheetViewer(sheet) },
             onExportPdf = { sheet ->
+                // FIX: Pass the archived sheet data correctly to onExportPdf
                 onExportPdf(
                     if (sheet.serviceNumber == "200") "WLG-AKL-200" else "AKL-WLG-201",
                     sheet.food, sheet.beverages,
@@ -899,6 +900,7 @@ fun MainScreen(
             sheet = s.sheet,
             onBack = { screen = AppScreen.PastSheetsList(s.sheet.serviceNumber) },
             onExportPdf = { sheet ->
+                // FIX: Pass the viewed sheet data correctly to onExportPdf
                 onExportPdf(
                     if (sheet.serviceNumber == "200") "WLG-AKL-200" else "AKL-WLG-201",
                     sheet.food, sheet.beverages,
@@ -2154,11 +2156,9 @@ fun DraggableStockRow(
 
     // ── Drag state ──────────────────────────────────────────────────────────
     var isDragging   by remember { mutableStateOf(false) }
-    // justPlaced = true for a brief window right after a swap fires — drives the flash
     var justPlaced   by remember { mutableStateOf(false) }
 
     // ── Animated properties ─────────────────────────────────────────────────
-    // Scale: springs to 1.07 on pickup, snaps back with a slight overshoot on release
     val scale by animateFloatAsState(
         targetValue = if (isDragging) 1.07f else 1f,
         animationSpec = spring(
@@ -2168,7 +2168,6 @@ fun DraggableStockRow(
         label = "dragScale"
     )
 
-    // Elevation shadow: floats up to 10dp while dragging
     val elevation by animateDpAsState(
         targetValue  = if (isDragging) 10.dp else 0.dp,
         animationSpec = spring(
@@ -2178,14 +2177,12 @@ fun DraggableStockRow(
         label = "dragElevation"
     )
 
-    // Border width: thickens while dragging
     val borderWidth by animateDpAsState(
         targetValue   = if (isDragging) 2.5.dp else 0.5.dp,
         animationSpec = tween(durationMillis = 180),
         label         = "borderWidth"
     )
 
-    // Border colour: orange while dragging, green flash on place, then normal
     val borderColor by animateColorAsState(
         targetValue = when {
             isDragging  -> KiwiRailOrange
@@ -2199,7 +2196,6 @@ fun DraggableStockRow(
         label = "borderColor"
     )
 
-    // Background: warm tint while dragging, green tint flash on place
     val bgColor by animateColorAsState(
         targetValue = when {
             isDragging -> KiwiRailOrange.copy(alpha = 0.10f)
@@ -2213,7 +2209,6 @@ fun DraggableStockRow(
         label = "bgColor"
     )
 
-    // Dim the drag handle slightly when not dragging so it doesn't clutter
     val handleAlpha by animateFloatAsState(
         targetValue   = if (isDragging) 1f else 0.45f,
         animationSpec = tween(200),
@@ -2221,8 +2216,6 @@ fun DraggableStockRow(
     )
 
     // ── justPlaced auto-clear ───────────────────────────────────────────────
-    // After a swap the flash stays visible for 700 ms then fades out naturally
-    // via the animateColorAsState above. We just need to flip justPlaced back.
     LaunchedEffect(justPlaced) {
         if (justPlaced) {
             delay(700)
@@ -2244,11 +2237,9 @@ fun DraggableStockRow(
     row.total = calculatedTotal
 
     // ── Haptic helpers ──────────────────────────────────────────────────────
-    // pickup: strong confirming click — user feels the row "detach"
     val hapticPickup: () -> Unit = {
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
-    // swap: lighter tick — user feels each position change
     val hapticSwap: () -> Unit = {
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
@@ -2264,13 +2255,13 @@ fun DraggableStockRow(
                     onDragStart = {
                         isDragging = true
                         acc        = 0f
-                        hapticPickup()       // feel the row lift
+                        hapticPickup()
                     },
                     onDragEnd = {
                         isDragging = false
                         acc        = 0f
-                        justPlaced = true    // trigger flash
-                        hapticSwap()         // feel the row land
+                        justPlaced = true
+                        hapticSwap()
                     },
                     onDragCancel = {
                         isDragging = false
@@ -2283,12 +2274,12 @@ fun DraggableStockRow(
                             acc < -50f -> {
                                 onMoveUp()
                                 acc = 0f
-                                hapticSwap()    // feel each position change
+                                hapticSwap()
                             }
                             acc > 50f -> {
                                 onMoveDown()
                                 acc = 0f
-                                hapticSwap()    // feel each position change
+                                hapticSwap()
                             }
                         }
                     }
@@ -2342,7 +2333,6 @@ fun DraggableStockRow(
 
 @Composable
 fun ModernBeverageStockRow(row: BeverageRow, clearTrigger: Int, onFieldChanged: () -> Unit) {
-    // Use only clearTrigger as the remember key — prevents cross-field contamination on recompose
     var closingCafe by remember(clearTrigger) { mutableStateOf(row.closingCafe) }
     var closingAG   by remember(clearTrigger) { mutableStateOf(row.closingAG) }
     var loading     by remember(clearTrigger) { mutableStateOf(row.loading) }
@@ -2417,7 +2407,6 @@ fun CompactNumericField(value: String, modifier: Modifier = Modifier, clearTrigg
 
 @Composable
 fun TinyNumericField(value: String, modifier: Modifier = Modifier, clearTrigger: Int = 0, onChange: (String) -> Unit) {
-    // Only clearTrigger as key — prevents AG field contamination when CAFÉ is typed
     var textValue by remember(clearTrigger) { mutableStateOf(value) }
     BasicTextField(
         value = textValue,
